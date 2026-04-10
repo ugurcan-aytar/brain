@@ -130,6 +130,7 @@ func newChatCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&opts.Model, "model", "m", "opus", "Claude model (opus, sonnet, haiku)")
+	cmd.Flags().StringVarP(&opts.Collection, "collection", "c", "", "Scope chat to a specific collection (skips the picker)")
 	return cmd
 }
 

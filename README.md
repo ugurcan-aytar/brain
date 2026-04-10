@@ -22,8 +22,23 @@ It's a **TUI-first app**, not a thin CLI wrapper around an API call. You get an 
 
 This is the Go port of the original [Second Brain CLI](https://github.com/ugurcan-aytar/brain) (written in TypeScript/Bun). Same features, same design, single static binary, no runtime to install.
 
+## Demo
+
+One-shot Q&A with cited sources, streamed live into a markdown renderer:
+
+<p align="center">
+  <img src="assets/demos/ask.gif" alt="brain ask demo" width="760">
+</p>
+
+Interactive REPL with slash commands, mode switching, and mid-session cancellation:
+
+<p align="center">
+  <img src="assets/demos/chat.gif" alt="brain chat demo" width="760">
+</p>
+
 ## Table of contents
 
+- [Demo](#demo)
 - [Core principle](#core-principle)
 - [Features](#features)
 - [Requirements](#requirements)
@@ -124,6 +139,11 @@ brain chat
 - `-c, --collection <name>` — scope to a single collection (skips the picker)
 - `-m, --model <model>` — `opus` (default), `sonnet`, `haiku`, or a full Anthropic model ID
 - `-M, --mode <mode>` — override the auto-detected thinking mode: `auto`, `recall`, `analysis`, `decision`, `synthesis`
+
+**Flags on `chat`:**
+
+- `-c, --collection <name>` — scope the whole session to one collection (skips the startup picker)
+- `-m, --model <model>` — same model aliases as `ask`; can also be swapped mid-session with `/model`
 
 ### Collections
 

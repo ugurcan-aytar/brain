@@ -36,7 +36,8 @@ import (
 
 // ChatOptions are the flags that ride alongside `brain chat`.
 type ChatOptions struct {
-	Model string
+	Model      string
+	Collection string // single-collection shortcut; skips the picker
 }
 
 var slashCommands = []struct {
@@ -101,17 +102,27 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		return nil
 	}
 
-	activeCollections, err := picker.Pick(ctx, picker.PickOptions{})
-	if err != nil {
-		if errors.Is(err, picker.ErrCancelled) || errors.Is(err, picker.ErrNoCollections) {
-			if errors.Is(err, picker.ErrNoCollections) {
-				fmt.Println(ui.Yellow.Render("No collections found. Add one with: brain add <path>"))
+	// --collection / -c lets users skip the picker when they already know
+	// which collection they want to talk to — same shortcut `brain ask`
+	// supports. Primary use is scripting/demos, but it's also just nicer
+	// for power users who work mostly in one collection.
+	var activeCollections []string
+	if opts.Collection != "" {
+		activeCollections = []string{opts.Collection}
+	} else {
+		picked, err := picker.Pick(ctx, picker.PickOptions{})
+		if err != nil {
+			if errors.Is(err, picker.ErrCancelled) || errors.Is(err, picker.ErrNoCollections) {
+				if errors.Is(err, picker.ErrNoCollections) {
+					fmt.Println(ui.Yellow.Render("No collections found. Add one with: brain add <path>"))
+					return nil
+				}
+				fmt.Println(ui.Dim.Render("\nGoodbye."))
 				return nil
 			}
-			fmt.Println(ui.Dim.Render("\nGoodbye."))
-			return nil
+			return err
 		}
-		return err
+		activeCollections = picked
 	}
 
 	currentMode := "auto"
