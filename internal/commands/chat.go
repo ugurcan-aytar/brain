@@ -383,6 +383,11 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 
 		rl.Close()
 		response, streamErr := llm.Stream(streamCtx, systemPrompt, historyMessages, llm.Options{Model: currentModel})
+		// Capture user-cancellation BEFORE we run our own cleanup cancel() —
+		// otherwise streamCtx.Err() below would always be non-nil and we'd
+		// silently drop every successful response from the history, which
+		// breaks both multi-turn conversations and /challenge.
+		userCancelled := streamCtx.Err() != nil
 		newRl, rerr := newReadline()
 		if rerr != nil {
 			cancel()
@@ -398,7 +403,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			historyMessages = historyMessages[:len(historyMessages)-1]
 			continue
 		}
-		if streamCtx.Err() != nil {
+		if userCancelled {
 			fmt.Println(ui.Dim.Render("\n  Cancelled."))
 			fmt.Println()
 			historyMessages = historyMessages[:len(historyMessages)-1]

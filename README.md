@@ -24,16 +24,40 @@ This is the Go port of the original [Second Brain CLI](https://github.com/ugurca
 
 ## Demo
 
-One-shot Q&A with cited sources, streamed live into a markdown renderer:
+**One-shot Q&A** — retrieval spinner, streaming markdown answer, cited sources, closing logo:
 
 <p align="center">
   <img src="assets/demos/ask.gif" alt="brain ask demo" width="760">
 </p>
 
-Interactive REPL with slash commands, mode switching, and mid-session cancellation:
+**Interactive REPL** — slash commands, `/mode` switching, grounded answer, clean exit:
 
 <p align="center">
   <img src="assets/demos/chat.gif" alt="brain chat demo" width="760">
+</p>
+
+**Thinking modes** — same topic asked four different ways. The structure of the response changes with the mode: `recall` → direct answer, `analysis` → findings/connections/gaps, `decision` → frameworks/recommendation, `synthesis` → building blocks/action plan.
+
+<p align="center">
+  <img src="assets/demos/thinking-modes.gif" alt="brain thinking modes demo" width="760">
+</p>
+
+**`/challenge`** — re-score an answer against a different set of sources. brain rebuilds the system prompt around the new chunks and streams a re-grounded response that contrasts the two. Great for stress-testing a conclusion before you commit to it.
+
+<p align="center">
+  <img src="assets/demos/challenge.gif" alt="brain challenge demo" width="760">
+</p>
+
+**TUI pickers** — the huh multi-select collection picker that fires on `brain chat` startup, plus the `/model` picker for switching Claude models mid-session:
+
+<p align="center">
+  <img src="assets/demos/pickers.gif" alt="brain pickers demo" width="760">
+</p>
+
+**`brain search`** — raw retrieval, no LLM. Lands in a few hundred milliseconds with scored chunks and inline previews. This is what powers the "no context → no LLM → no hallucination" principle:
+
+<p align="center">
+  <img src="assets/demos/search.gif" alt="brain search demo" width="760">
 </p>
 
 ## Table of contents
