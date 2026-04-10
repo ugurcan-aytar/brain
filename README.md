@@ -14,7 +14,7 @@
 [![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#requirements)
-[![Powered by Claude](https://img.shields.io/badge/powered%20by-Claude-d97757?logo=anthropic&logoColor=white)](https://www.anthropic.com)
+[![Optimized for Claude](https://img.shields.io/badge/optimized%20for-Claude-d97757?logo=anthropic&logoColor=white)](https://www.anthropic.com)
 [![Built with qmd](https://img.shields.io/badge/retrieval-qmd-8A2BE2)](https://github.com/tobilu/qmd)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
