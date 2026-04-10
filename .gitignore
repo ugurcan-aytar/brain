@@ -1,0 +1,17 @@
+/brain
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+.env
+.env.local
+
+history/
+
+.DS_Store
+.vscode/
+.idea/
+
+.claude/
