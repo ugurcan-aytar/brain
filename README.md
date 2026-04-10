@@ -108,7 +108,36 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 
 ## Install
 
-### One-liner (macOS & Linux)
+### Homebrew (macOS & Linux)
+
+```sh
+brew install ugurcan-aytar/brain/brain
+```
+
+No `sudo` needed — Homebrew manages its own prefix. Works on macOS and on Linux via [Linuxbrew](https://docs.brew.sh/Homebrew-on-Linux). Every release auto-publishes a cask to the [homebrew-brain tap](https://github.com/ugurcan-aytar/homebrew-brain) via `goreleaser`.
+
+### Debian / Ubuntu
+
+```sh
+# Download the latest .deb from the releases page, then:
+sudo apt install ./brain_*_amd64.deb
+```
+
+Grab the matching `.deb` for your arch (`amd64` or `arm64`) from [Releases](https://github.com/ugurcan-aytar/brain/releases). The package installs `brain` to `/usr/local/bin`.
+
+### Fedora / RHEL
+
+```sh
+sudo dnf install ./brain_*_x86_64.rpm
+```
+
+### Alpine
+
+```sh
+sudo apk add --allow-untrusted brain_*_x86_64.apk
+```
+
+### One-liner (any POSIX shell)
 
 ```sh
 curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh

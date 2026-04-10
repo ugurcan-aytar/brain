@@ -33,7 +33,7 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - LICENSE
       - README.md
@@ -43,6 +43,61 @@ checksum:
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
+
+# Homebrew tap — publishes a cask to a separate repo on every release so
+# macOS/Linux users can `brew install ugurcan-aytar/brain/brain`. The tap
+# repo (homebrew-brain) must exist and the GitHub token running goreleaser
+# needs push access to it.
+homebrew_casks:
+  - name: brain
+    binaries:
+      - brain
+    repository:
+      owner: ugurcan-aytar
+      name: homebrew-brain
+      branch: main
+    directory: Casks
+    homepage: https://github.com/ugurcan-aytar/brain
+    description: Conversational knowledge base over your local notes
+    license: MIT
+    # qmd ships via npm (not brew), so we surface it in the caveats
+    # below. node is a formula (not a cask) — users need it to run
+    # `npm install -g @tobilu/qmd`.
+    dependencies:
+      - formula: node
+    caveats: |
+      brain also needs qmd (the retrieval engine) on your PATH:
+
+        npm install -g @tobilu/qmd
+
+      And at least one LLM backend — either ANTHROPIC_API_KEY,
+      OPENAI_API_KEY, or the `claude` CLI signed in.
+
+      Run `brain doctor` to verify everything's wired up.
+
+# Linux packages — .deb, .rpm, .apk generated via goreleaser's nfpm
+# integration. Lets Debian/Ubuntu users do `sudo apt install ./brain.deb`
+# and Fedora/RHEL users do `sudo dnf install ./brain.rpm` directly off
+# the release artifacts. No apt repo server required.
+nfpms:
+  - id: brain
+    package_name: brain
+    vendor: ugurcan-aytar
+    homepage: https://github.com/ugurcan-aytar/brain
+    maintainer: Ugurcan Aytar <ugurcan.aytar@gmail.com>
+    description: |
+      Conversational knowledge base over your local notes.
+      brain turns a folder of markdown and text files into a queryable
+      knowledge base, grounding answers in the chunks it retrieves
+      from your notes.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/local/bin
+    section: utils
+    priority: optional
 
 changelog:
   sort: asc
@@ -63,10 +118,24 @@ release:
   header: |
     ## brain {{ .Tag }}
 
-    Install with the one-liner:
+    **Homebrew (macOS & Linux)**:
+    ```sh
+    brew install ugurcan-aytar/brain/brain
+    ```
 
+    **Debian / Ubuntu**:
+    ```sh
+    sudo apt install ./brain_{{ .Version }}_amd64.deb
+    ```
+
+    **Fedora / RHEL**:
+    ```sh
+    sudo dnf install ./brain_{{ .Version }}_x86_64.rpm
+    ```
+
+    **Shell installer** (any POSIX shell):
     ```sh
     curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh
     ```
 
-    Or grab a prebuilt binary below and drop it into `/usr/local/bin`.
+    Or grab a prebuilt archive below and drop the `brain` binary into `/usr/local/bin`.
