@@ -14,7 +14,7 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "1.0.0"
+const version = "0.1.0"
 
 func main() {
 	// Restore terminal state on any exit path — readline + huh both put the
