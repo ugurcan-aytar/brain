@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="brain" width="640">
+<img src="assets/logo.png" alt="brain" width="640">
 
 ### Conversational knowledge base over your local notes
 
