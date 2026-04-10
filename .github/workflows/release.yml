@@ -1,0 +1,53 @@
+# Runs goreleaser on every version tag push (v1.0.0, v1.2.3-beta, …).
+# Triggered manually via `git tag vX.Y.Z && git push origin vX.Y.Z` so
+# releases stay deliberate — no accidental version bumps on main pushes.
+#
+# The workflow builds every target in .goreleaser.yaml, creates a
+# GitHub release with the prebuilt binaries + .deb/.rpm/.apk packages,
+# and pushes a Homebrew cask to the ugurcan-aytar/homebrew-brain tap.
+#
+# Required repo secret:
+#   HOMEBREW_TAP_GITHUB_TOKEN — a fine-grained or classic PAT with
+#   "contents: write" on ugurcan-aytar/homebrew-brain. The default
+#   GITHUB_TOKEN can't push to a different repo, so the tap needs its
+#   own token.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # goreleaser needs the full history to generate the changelog
+          # between the previous tag and this one.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Auto-populated by Actions, lets goreleaser push the main
+          # release + assets back to this repo.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # User-provided PAT — lets goreleaser push the generated Cask
+          # formula to the separate homebrew-brain tap repo.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

@@ -56,6 +56,9 @@ homebrew_casks:
       owner: ugurcan-aytar
       name: homebrew-brain
       branch: main
+      # PAT with write access to the tap repo. Needed because the
+      # default GITHUB_TOKEN is scoped to the current repo only.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
     homepage: https://github.com/ugurcan-aytar/brain
     description: Conversational knowledge base over your local notes
