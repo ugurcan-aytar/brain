@@ -9,14 +9,15 @@ import (
 	"strings"
 
 	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
 // Doctor checks that every external dependency brain relies on is in place:
-// the qmd binary (retrieval engine), and at least one LLM backend — either
-// ANTHROPIC_API_KEY or the `claude` CLI. It prints a human-readable report
-// and exits non-zero if anything required is missing, so CI and install
-// scripts can gate on it.
+// the qmd retrieval engine, plus at least one LLM backend from the three
+// brain supports (Anthropic API, OpenAI-compatible, or the Claude CLI).
+// Prints a human-readable report and exits non-zero if anything required is
+// missing so CI and install scripts can gate on it.
 func Doctor(ctx context.Context) error {
 	fmt.Println(ui.Bold.Render("brain doctor"))
 	fmt.Println(ui.Dim.Render(fmt.Sprintf("  %s/%s, Go runtime %s", runtime.GOOS, runtime.GOARCH, runtime.Version())))
@@ -35,23 +36,47 @@ func Doctor(ctx context.Context) error {
 		failures++
 	}
 
-	// LLM backend: either the API key or the claude CLI is enough. Both is
-	// fine too — the API key takes priority at runtime.
-	hasKey := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) != ""
-	claudePath, claudeErr := exec.LookPath("claude")
-	hasClaude := claudeErr == nil
+	// LLM backends: report each slot independently, then show which one is
+	// actually active based on brain's priority order.
+	active := llm.Select()
+	reportBackend := func(b llm.Backend, msg string) {
+		if b == active {
+			ok(msg + ui.Green.Render("  ← active"))
+		} else {
+			ok(msg)
+		}
+	}
 
-	switch {
-	case hasKey && hasClaude:
-		ok("ANTHROPIC_API_KEY set (will take priority)")
-		ok(fmt.Sprintf("claude CLI found at %s (fallback)", claudePath))
-	case hasKey:
-		ok("ANTHROPIC_API_KEY set")
-	case hasClaude:
-		ok(fmt.Sprintf("claude CLI found at %s", claudePath))
-	default:
+	hasAnthropic := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) != ""
+	if hasAnthropic {
+		reportBackend(llm.BackendAnthropicAPI, "ANTHROPIC_API_KEY set")
+	}
+
+	hasOpenAI := strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != ""
+	if hasOpenAI {
+		base := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
+		if base == "" {
+			base = "https://api.openai.com/v1"
+		}
+		model := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+		if model == "" {
+			model = "gpt-4o (default)"
+		}
+		reportBackend(llm.BackendOpenAI, fmt.Sprintf("OPENAI_API_KEY set (%s, model=%s)", base, model))
+	}
+
+	claudeBin := "claude"
+	if override := strings.TrimSpace(os.Getenv("BRAIN_CLAUDE_BIN")); override != "" {
+		claudeBin = override
+	}
+	if claudePath, err := exec.LookPath(claudeBin); err == nil {
+		reportBackend(llm.BackendClaudeCLI, fmt.Sprintf("%s CLI found at %s", claudeBin, claudePath))
+	} else if !hasAnthropic && !hasOpenAI {
 		fail("no LLM backend configured")
-		hint("Set ANTHROPIC_API_KEY, or install the Claude Code CLI from https://claude.ai/download")
+		hint("Pick one of:")
+		hint("  export ANTHROPIC_API_KEY=…     (native Claude, recommended)")
+		hint("  export OPENAI_API_KEY=…        (OpenAI, Ollama, OpenRouter, …)")
+		hint("  install the Claude Code CLI:   https://claude.ai/download")
 		failures++
 	}
 

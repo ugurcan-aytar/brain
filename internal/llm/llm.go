@@ -1,18 +1,18 @@
-// Package llm wraps the two ways brain can talk to Claude:
+// Package llm wraps the three ways brain can reach a model:
 //
-//  1. Directly via the Anthropic SDK if ANTHROPIC_API_KEY is set.
-//  2. By piping a prompt through the local `claude` CLI (stream-json mode)
-//     when no API key is available. This lets users with a Claude Code
-//     subscription run brain without a separate API key.
+//  1. Anthropic REST API          -- when ANTHROPIC_API_KEY is set
+//  2. OpenAI-compatible REST API  -- when OPENAI_API_KEY is set
+//     (covers OpenAI, Ollama, OpenRouter, LM Studio, LiteLLM, Groq, etc.)
+//  3. Claude CLI fallback         -- pipes through `claude` (or $BRAIN_CLAUDE_BIN)
+//     for users with a Claude Code subscription but no API key
 //
-// Both backends stream tokens into a markdown.Renderer so the user sees
-// output as it arrives, and both honor ctx cancellation for Ctrl+C.
+// All three stream tokens into a markdown.Renderer so the user sees output
+// as it arrives, and all three honor ctx cancellation for Ctrl+C.
 package llm
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/ugurcan-aytar/brain/internal/config"
@@ -38,23 +38,31 @@ type Options struct {
 	Model string // alias or full model ID; empty defaults to opus
 }
 
-// Stream sends the conversation to Claude and streams the response into a
-// markdown.Renderer, returning the full text. If ctx is cancelled the call
-// unwinds gracefully and returns whatever was received so far (no error).
+// Stream sends the conversation to the active backend and streams the
+// response into a markdown.Renderer, returning the full text. If ctx is
+// cancelled the call unwinds gracefully and returns whatever was received
+// so far (no error). If no backend is configured at all, ErrNoBackend is
+// returned immediately so callers can render install guidance.
 func Stream(ctx context.Context, systemPrompt string, messages []Message, opts Options) (string, error) {
-	model := ResolveModel(opts.Model)
 	renderer := markdown.New()
-	fmt.Println()
 
 	var (
 		full string
 		err  error
 	)
 
-	if os.Getenv("ANTHROPIC_API_KEY") != "" {
-		full, err = streamViaSDK(ctx, systemPrompt, messages, model, renderer)
-	} else {
-		full, err = streamViaCLI(ctx, systemPrompt, messages, model, renderer)
+	switch Select() {
+	case BackendAnthropicAPI:
+		fmt.Println()
+		full, err = streamViaSDK(ctx, systemPrompt, messages, ResolveModel(opts.Model), renderer)
+	case BackendOpenAI:
+		fmt.Println()
+		full, err = streamViaOpenAI(ctx, systemPrompt, messages, ResolveOpenAIModel(opts.Model), renderer)
+	case BackendClaudeCLI:
+		fmt.Println()
+		full, err = streamViaCLI(ctx, systemPrompt, messages, ResolveModel(opts.Model), renderer)
+	default:
+		return "", ErrNoBackend
 	}
 
 	if err != nil {

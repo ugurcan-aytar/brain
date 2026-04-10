@@ -29,8 +29,10 @@ type claudeCLIEvent struct {
 	} `json:"event"`
 }
 
-// ErrClaudeCLIMissing is returned when neither ANTHROPIC_API_KEY is set nor
-// the `claude` CLI is available in PATH.
+// ErrClaudeCLIMissing is returned when the CLI fallback was selected but the
+// binary isn't on PATH at exec time. In practice Select() guards against this
+// so the error only surfaces in race conditions (PATH changed mid-run) or
+// when tests force the CLI path directly.
 var ErrClaudeCLIMissing = errors.New("claude CLI is not installed or not found in PATH")
 
 func streamViaCLI(
@@ -53,7 +55,7 @@ func streamViaCLI(
 		userPrompt,
 	}
 
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, claudeBinary(), args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", fmt.Errorf("stdout pipe: %w", err)

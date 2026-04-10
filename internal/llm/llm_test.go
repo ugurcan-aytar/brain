@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -111,6 +113,100 @@ func TestStripAnsiRemnants(t *testing.T) {
 				t.Errorf("stripAnsiRemnants(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSelectPriority(t *testing.T) {
+	// Stub lookPath so tests don't depend on whether `claude` is actually
+	// installed on the box running them.
+	origLookPath := lookPath
+	t.Cleanup(func() { lookPath = origLookPath })
+
+	claudeAvailable := func(name string) (string, error) { return "/fake/bin/" + name, nil }
+	claudeMissing := func(name string) (string, error) { return "", &exec.Error{Name: name, Err: errors.New("not found")} }
+
+	cases := []struct {
+		name      string
+		anthropic string
+		openai    string
+		claudeBin string
+		lookPath  func(string) (string, error)
+		want      Backend
+	}{
+		{"nothing set", "", "", "", claudeMissing, BackendNone},
+		{"only claude CLI", "", "", "", claudeAvailable, BackendClaudeCLI},
+		{"openai beats claude CLI", "", "sk-openai", "", claudeAvailable, BackendOpenAI},
+		{"anthropic beats everything", "sk-ant", "sk-openai", "", claudeAvailable, BackendAnthropicAPI},
+		{"anthropic alone", "sk-ant", "", "", claudeMissing, BackendAnthropicAPI},
+		{"openai alone", "", "sk-openai", "", claudeMissing, BackendOpenAI},
+		{"BRAIN_CLAUDE_BIN custom name", "", "", "opencode", claudeAvailable, BackendClaudeCLI},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ANTHROPIC_API_KEY", tc.anthropic)
+			t.Setenv("OPENAI_API_KEY", tc.openai)
+			t.Setenv("BRAIN_CLAUDE_BIN", tc.claudeBin)
+			lookPath = tc.lookPath
+
+			if got := Select(); got != tc.want {
+				t.Errorf("Select() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClaudeBinary(t *testing.T) {
+	t.Setenv("BRAIN_CLAUDE_BIN", "")
+	if got := claudeBinary(); got != "claude" {
+		t.Errorf("default claudeBinary = %q, want %q", got, "claude")
+	}
+	t.Setenv("BRAIN_CLAUDE_BIN", "opencode")
+	if got := claudeBinary(); got != "opencode" {
+		t.Errorf("override claudeBinary = %q, want %q", got, "opencode")
+	}
+	// Whitespace-only overrides should be ignored — otherwise a user with
+	// `export BRAIN_CLAUDE_BIN= ` in their rc would break the fallback.
+	t.Setenv("BRAIN_CLAUDE_BIN", "   ")
+	if got := claudeBinary(); got != "claude" {
+		t.Errorf("whitespace override should fall back, got %q", got)
+	}
+}
+
+func TestResolveOpenAIModel(t *testing.T) {
+	cases := []struct {
+		name  string
+		flag  string
+		env   string
+		want  string
+	}{
+		{"default when nothing set", "", "", "gpt-4o"},
+		{"env var fills default", "", "gpt-5-mini", "gpt-5-mini"},
+		{"claude alias ignored, env wins", "opus", "gpt-5", "gpt-5"},
+		{"claude alias ignored, default wins", "sonnet", "", "gpt-4o"},
+		{"claude full id ignored", "claude-opus-4-6", "gpt-5", "gpt-5"},
+		{"raw openai id passes through", "gpt-4o-mini", "gpt-5", "gpt-4o-mini"},
+		{"openrouter slash id passes through", "meta-llama/llama-3.1-70b-instruct", "", "meta-llama/llama-3.1-70b-instruct"},
+		{"ollama model passes through", "llama3.1", "", "llama3.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OPENAI_MODEL", tc.env)
+			if got := ResolveOpenAIModel(tc.flag); got != tc.want {
+				t.Errorf("ResolveOpenAIModel(%q) with OPENAI_MODEL=%q = %q, want %q",
+					tc.flag, tc.env, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestOpenAIBaseURL(t *testing.T) {
+	t.Setenv("OPENAI_BASE_URL", "")
+	if got := openAIBaseURL(); got != "https://api.openai.com/v1" {
+		t.Errorf("default openAIBaseURL = %q", got)
+	}
+	t.Setenv("OPENAI_BASE_URL", "http://localhost:11434/v1/")
+	if got := openAIBaseURL(); got != "http://localhost:11434/v1" {
+		t.Errorf("trailing slash should be trimmed, got %q", got)
 	}
 }
 

@@ -94,6 +94,13 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 
 	ui.PrintLogo()
 
+	// Same pre-check as Ask — bail before the picker so users see friendly
+	// guidance instead of getting stuck in a REPL with a broken backend.
+	if llm.Select() == llm.BackendNone {
+		printNoBackend()
+		return nil
+	}
+
 	activeCollections, err := picker.Pick(ctx, picker.PickOptions{})
 	if err != nil {
 		if errors.Is(err, picker.ErrCancelled) || errors.Is(err, picker.ErrNoCollections) {

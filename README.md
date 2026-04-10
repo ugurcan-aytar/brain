@@ -59,13 +59,16 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **Model switching** — swap between `opus`, `sonnet`, and `haiku` mid-session
 - **Q&A history** — every exchange is saved as a timestamped markdown file you can grep later
 - **Ctrl+C everywhere** — cancel retrieval or streaming at any time without leaving your terminal in a broken state
-- **Dual backend** — uses the Anthropic REST API when `ANTHROPIC_API_KEY` is set, otherwise falls back to the local `claude` CLI
+- **Pluggable backend** — native Anthropic API, any OpenAI-compatible endpoint (OpenAI, Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together…), or the local `claude` CLI as a fallback
 
 ## Requirements
 
 - **macOS, Linux, or Windows** — the `install.sh` script supports macOS and Linux; Windows users can grab the `.zip` directly from [Releases](https://github.com/ugurcan-aytar/brain/releases).
 - **[qmd](https://github.com/tobilu/qmd)** — the local embeddings + retrieval engine that powers the search layer. The installer picks this up automatically if `npm` is available; otherwise run `npm install -g @tobilu/qmd` yourself.
-- **Either** an `ANTHROPIC_API_KEY` environment variable, **or** the [Claude Code CLI](https://claude.ai/download) installed and signed in. If both are available, the API key takes priority.
+- **At least one LLM backend.** brain picks the first one it finds, in this order:
+  1. `ANTHROPIC_API_KEY` — native Claude API, the fastest and cheapest path (recommended).
+  2. `OPENAI_API_KEY` — any OpenAI-compatible endpoint. Works out of the box with OpenAI, and via `OPENAI_BASE_URL` also with Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together, Fireworks, etc. See [Configuration](#configuration) for examples.
+  3. The [Claude Code CLI](https://claude.ai/download) on your PATH — useful if you have a Claude subscription but no API key. Override the binary name with `BRAIN_CLAUDE_BIN` to point at a fork (e.g. `opencode`).
 - **Go 1.24+** — only needed if you're building from source.
 
 ## Install
@@ -198,8 +201,47 @@ Defaults live in [`internal/config/config.go`](internal/config/config.go). The i
 
 | Variable | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` | Use the API directly instead of the `claude` CLI |
+| `ANTHROPIC_API_KEY` | Use the native Anthropic API (highest priority backend) |
+| `OPENAI_API_KEY` | Use any OpenAI-compatible `/v1/chat/completions` endpoint |
+| `OPENAI_BASE_URL` | Override the OpenAI endpoint — point this at Ollama, OpenRouter, LM Studio, LiteLLM, etc. Defaults to `https://api.openai.com/v1` |
+| `OPENAI_MODEL` | Model name to send to the OpenAI-compatible endpoint. Defaults to `gpt-4o`. Also honors `-m` / `/model` when the value doesn't look like a Claude alias, so `brain ask -m llama3.1 "…"` works on Ollama |
+| `BRAIN_CLAUDE_BIN` | Name of the Claude CLI binary brain shells out to. Defaults to `claude`. Set to `opencode` (or another fork that speaks the same `stream-json` protocol) to reuse the CLI fallback without rebuilding |
 | `BRAIN_HISTORY_DIR` | Override where Q&A history is written (defaults to `~/.brain/history`) |
+
+### Using a different backend
+
+**Ollama (local, free, offline-capable):**
+
+```sh
+export OPENAI_API_KEY=ollama          # any non-empty string works
+export OPENAI_BASE_URL=http://localhost:11434/v1
+export OPENAI_MODEL=llama3.1
+brain ask "what did I write about activation energy?"
+```
+
+**OpenRouter (one key, every model):**
+
+```sh
+export OPENAI_API_KEY=sk-or-…
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+brain ask -m meta-llama/llama-3.1-70b-instruct "…"
+```
+
+**OpenAI proper:**
+
+```sh
+export OPENAI_API_KEY=sk-…
+brain ask "…"                         # uses gpt-4o by default
+```
+
+**`opencode` instead of `claude`:**
+
+```sh
+export BRAIN_CLAUDE_BIN=opencode
+brain ask "…"
+```
+
+> **Note:** brain's adaptive prompts and thinking-mode directives are tuned for Claude. Non-Claude models will work — the retrieval gate ("no chunks → no LLM call") is model-agnostic — but response quality, especially for `synthesis` and `decision` modes, varies. Run `brain doctor` to see which backend is active.
 
 ## Architecture
 

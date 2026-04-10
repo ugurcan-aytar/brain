@@ -29,6 +29,14 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	ctx, stopSignal := withSignalCancel(parent)
 	defer stopSignal()
 
+	// Fail fast before the picker takes over the TTY — nothing else brain
+	// does is useful without a working backend, and we don't want to make
+	// the user click through collections just to hit an error.
+	if llm.Select() == llm.BackendNone {
+		printNoBackend()
+		return nil
+	}
+
 	collections, err := resolveCollections(ctx, opts.Collection)
 	if err != nil {
 		if errors.Is(err, picker.ErrCancelled) {

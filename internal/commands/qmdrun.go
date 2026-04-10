@@ -59,3 +59,17 @@ func printQmdMissing() {
 
 // isMissing checks whether an error is our sentinel for "qmd not in PATH".
 func isMissing(err error) bool { return errors.Is(err, errQmdMissing) }
+
+// printNoBackend renders the "no LLM backend configured" guidance. Called
+// from Ask/Chat before they kick off the retrieval pipeline, so users get
+// actionable next steps instead of a bare "no backend" error after the
+// picker has already run.
+func printNoBackend() {
+	fmt.Println(ui.Red.Render("Error: no LLM backend is configured."))
+	fmt.Println(ui.Dim.Render("brain needs one of:"))
+	fmt.Println(ui.Dim.Render("  • ANTHROPIC_API_KEY (native Claude, recommended)"))
+	fmt.Println(ui.Dim.Render("  • OPENAI_API_KEY    (OpenAI, Ollama, OpenRouter, LM Studio, …)"))
+	fmt.Println(ui.Dim.Render("  • the `claude` CLI installed and signed in"))
+	fmt.Println()
+	fmt.Println(ui.Dim.Render("Run `brain doctor` for a full checklist."))
+}
