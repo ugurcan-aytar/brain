@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
@@ -15,6 +16,22 @@ import (
 type AddOptions struct {
 	Name string
 	Mask string
+}
+
+// NewAddCmd wires the Add handler into a Cobra command with its flags.
+func NewAddCmd() *cobra.Command {
+	var opts AddOptions
+	cmd := &cobra.Command{
+		Use:   "add <path>",
+		Short: "Add a new collection of notes",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Add(cmd.Context(), args[0], opts)
+		},
+	}
+	cmd.Flags().StringVar(&opts.Name, "name", "", "Collection name (default: folder basename)")
+	cmd.Flags().StringVar(&opts.Mask, "mask", "", "File glob mask (default: **/*.{txt,md})")
+	return cmd
 }
 
 // Add validates the path exists, registers it as a collection with qmd,

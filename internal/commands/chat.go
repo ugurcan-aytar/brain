@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/chzyer/readline"
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/history"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/picker"
@@ -38,6 +39,22 @@ import (
 type ChatOptions struct {
 	Model      string
 	Collection string // single-collection shortcut; skips the picker
+}
+
+// NewChatCmd wires the Chat REPL into a Cobra command with its flags.
+func NewChatCmd() *cobra.Command {
+	var opts ChatOptions
+	cmd := &cobra.Command{
+		Use:   "chat",
+		Short: "Interactive REPL chat with your notes",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Chat(cmd.Context(), opts)
+		},
+	}
+	cmd.Flags().StringVarP(&opts.Model, "model", "m", "opus", "Claude model (opus, sonnet, haiku)")
+	cmd.Flags().StringVarP(&opts.Collection, "collection", "c", "", "Scope chat to a specific collection (skips the picker)")
+	return cmd
 }
 
 var slashCommands = []struct {

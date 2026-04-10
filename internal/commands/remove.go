@@ -6,9 +6,22 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewRemoveCmd wires the Remove handler into a Cobra command.
+func NewRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove a collection and clean up its index",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Remove(cmd.Context(), args[0])
+		},
+	}
+}
 
 // Remove unregisters a collection and re-runs qmd update so the embeddings
 // for the removed files drop out of the index. We intentionally do NOT rerun

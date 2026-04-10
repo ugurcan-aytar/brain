@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/history"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/picker"
@@ -20,6 +21,23 @@ type AskOptions struct {
 	Collection string // single collection shortcut; skips the picker
 	Model      string // alias or full model ID
 	Mode       string // one of prompt.ValidModes (auto|recall|…)
+}
+
+// NewAskCmd wires the Ask handler into a Cobra command with its flags.
+func NewAskCmd() *cobra.Command {
+	var opts AskOptions
+	cmd := &cobra.Command{
+		Use:   "ask <question>",
+		Short: "One-shot Q&A against your notes",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Ask(cmd.Context(), args[0], opts)
+		},
+	}
+	cmd.Flags().StringVarP(&opts.Collection, "collection", "c", "", "Scope search to a specific collection")
+	cmd.Flags().StringVarP(&opts.Model, "model", "m", "opus", "Claude model (opus, sonnet, haiku)")
+	cmd.Flags().StringVarP(&opts.Mode, "mode", "M", "auto", "Thinking mode (auto, recall, analysis, decision, synthesis)")
+	return cmd
 }
 
 // Ask runs the one-shot Q&A path: pick collections → retrieve → grounding

@@ -5,9 +5,25 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewFilesCmd wires the Files handler into a Cobra command with its flag.
+func NewFilesCmd() *cobra.Command {
+	var collection string
+	cmd := &cobra.Command{
+		Use:   "files",
+		Short: "List all indexed files",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Files(cmd.Context(), collection)
+		},
+	}
+	cmd.Flags().StringVarP(&collection, "collection", "c", "", "Filter by collection")
+	return cmd
+}
 
 // Files lists every indexed file, optionally scoped to a single collection.
 func Files(ctx context.Context, collection string) error {

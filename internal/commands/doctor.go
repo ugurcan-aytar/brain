@@ -8,10 +8,23 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewDoctorCmd wires the Doctor handler into a Cobra command.
+func NewDoctorCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Check required dependencies and configuration",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Doctor(cmd.Context())
+		},
+	}
+}
 
 // Doctor checks that every external dependency brain relies on is in place:
 // the qmd retrieval engine, plus at least one LLM backend from the three

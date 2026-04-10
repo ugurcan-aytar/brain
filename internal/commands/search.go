@@ -6,9 +6,25 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/retriever"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewSearchCmd wires the Search handler into a Cobra command with its flags.
+func NewSearchCmd() *cobra.Command {
+	var collection string
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search your notes without LLM (raw retrieval results)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Search(cmd.Context(), args[0], collection)
+		},
+	}
+	cmd.Flags().StringVarP(&collection, "collection", "c", "", "Scope search to a specific collection")
+	return cmd
+}
 
 // Search runs a raw retrieval (no LLM) and prints the top results with
 // confidence bars — useful for verifying indexing is behaving before

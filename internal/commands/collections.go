@@ -5,9 +5,22 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewCollectionsCmd wires the Collections handler into a Cobra command.
+func NewCollectionsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "collections",
+		Short: "List all registered collections",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Collections(cmd.Context())
+		},
+	}
+}
 
 // Collections lists every registered qmd collection.
 func Collections(ctx context.Context) error {

@@ -5,9 +5,22 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewStatusCmd wires the Status handler into a Cobra command.
+func NewStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show index status and brain config",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Status(cmd.Context())
+		},
+	}
+}
 
 // Status runs `qmd status` and appends the brain-specific config block so
 // users can see the model, token limits, and retrieval thresholds in one

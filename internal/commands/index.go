@@ -6,9 +6,22 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
+
+// NewIndexCmd wires the Index handler into a Cobra command.
+func NewIndexCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "index",
+		Short: "Re-index and embed all collections",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Index(cmd.Context())
+		},
+	}
+}
 
 // Index runs `qmd update` followed by `qmd embed`, showing a spinner for
 // each step. Re-running is safe — qmd handles dedupe on its side.
