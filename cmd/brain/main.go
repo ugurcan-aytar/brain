@@ -6,12 +6,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/commands"
+	"golang.org/x/term"
 )
 
 const version = "1.0.0"
@@ -19,9 +19,10 @@ const version = "1.0.0"
 func main() {
 	// Restore terminal state on any exit path — readline + huh both put the
 	// TTY into raw mode, and a panic or signal can otherwise leave the shell
-	// unable to echo input. `stty sane` is the cheapest fix and a no-op when
-	// stdin isn't a TTY.
-	defer restoreTerminal()
+	// unable to echo input. golang.org/x/term is cross-platform (macOS, Linux,
+	// Windows) so we don't need a stty subprocess.
+	restore := snapshotTerminal()
+	defer restore()
 
 	// SIGTERM always exits hard (no handler can recover meaningfully). SIGINT
 	// is handled by each subcommand itself — chat wants first Ctrl+C to cancel
@@ -31,22 +32,32 @@ func main() {
 	signal.Notify(sigs, syscall.SIGTERM)
 	go func() {
 		<-sigs
-		restoreTerminal()
+		restore()
 		os.Exit(143)
 	}()
 
 	ctx := context.Background()
 	root := newRootCmd()
 	if err := root.ExecuteContext(ctx); err != nil {
-		restoreTerminal()
+		restore()
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func restoreTerminal() {
-	// Ignore errors — this is best-effort terminal cleanup.
-	_ = exec.Command("stty", "sane").Run()
+// snapshotTerminal captures the current TTY state (if stdin is a terminal)
+// and returns a best-effort restore closure. It's a no-op when stdin isn't a
+// TTY — e.g. when brain is piped or run under CI.
+func snapshotTerminal() func() {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return func() {}
+	}
+	state, err := term.GetState(fd)
+	if err != nil {
+		return func() {}
+	}
+	return func() { _ = term.Restore(fd, state) }
 }
 
 const longDescription = `Second Brain CLI -- conversational knowledge base over your local notes
@@ -64,7 +75,8 @@ const longDescription = `Second Brain CLI -- conversational knowledge base over 
 
   Maintenance:
     brain index                  Re-index and generate embeddings
-    brain status                 Show index health and config`
+    brain status                 Show index health and config
+    brain doctor                 Check required dependencies and config`
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
@@ -86,6 +98,7 @@ func newRootCmd() *cobra.Command {
 		newStatusCmd(),
 		newIndexCmd(),
 		newFilesCmd(),
+		newDoctorCmd(),
 	)
 	return root
 }
@@ -205,4 +218,15 @@ func newFilesCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&collection, "collection", "c", "", "Filter by collection")
 	return cmd
+}
+
+func newDoctorCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Check required dependencies and configuration",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return commands.Doctor(cmd.Context())
+		},
+	}
 }

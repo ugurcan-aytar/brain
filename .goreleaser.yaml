@@ -1,0 +1,72 @@
+version: 2
+
+project_name: brain
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: brain
+    main: ./cmd/brain
+    binary: brain
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: brain
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: ugurcan-aytar
+    name: brain
+  draft: false
+  prerelease: auto
+  header: |
+    ## brain {{ .Tag }}
+
+    Install with the one-liner:
+
+    ```sh
+    curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh
+    ```
+
+    Or grab a prebuilt binary below and drop it into `/usr/local/bin`.

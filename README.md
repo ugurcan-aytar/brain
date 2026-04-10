@@ -13,7 +13,7 @@
 
 [![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#requirements)
 [![Powered by Claude](https://img.shields.io/badge/powered%20by-Claude-d97757?logo=anthropic&logoColor=white)](https://www.anthropic.com)
 [![Built with qmd](https://img.shields.io/badge/retrieval-qmd-8A2BE2)](https://github.com/tobilu/qmd)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -63,15 +63,22 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 
 ## Requirements
 
-- **Go 1.24+** (for building from source)
-- **macOS or Linux** — Windows is not supported (terminal restoration relies on `stty`)
-- **[qmd](https://github.com/tobilu/qmd)** — the local embeddings + retrieval engine that powers the search layer
-  ```sh
-  npm install -g @tobilu/qmd
-  ```
+- **macOS, Linux, or Windows** — the `install.sh` script supports macOS and Linux; Windows users can grab the `.zip` directly from [Releases](https://github.com/ugurcan-aytar/brain/releases).
+- **[qmd](https://github.com/tobilu/qmd)** — the local embeddings + retrieval engine that powers the search layer. The installer picks this up automatically if `npm` is available; otherwise run `npm install -g @tobilu/qmd` yourself.
 - **Either** an `ANTHROPIC_API_KEY` environment variable, **or** the [Claude Code CLI](https://claude.ai/download) installed and signed in. If both are available, the API key takes priority.
+- **Go 1.24+** — only needed if you're building from source.
 
 ## Install
+
+### One-liner (macOS & Linux)
+
+```sh
+curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh
+```
+
+The script downloads the right prebuilt binary for your OS/arch, verifies its SHA-256 against `checksums.txt`, drops it into `/usr/local/bin` (or `~/.local/bin` as a fallback), offers to `npm install -g @tobilu/qmd` if qmd is missing, and runs `brain doctor` at the end to confirm everything works.
+
+Environment overrides: `BRAIN_VERSION=v1.2.3` to pin a release, `BRAIN_PREFIX=$HOME/.local` to change the install prefix, `BRAIN_NO_QMD=1` to skip the qmd step.
 
 ### From source
 
@@ -87,6 +94,8 @@ sudo mv brain /usr/local/bin/
 ```sh
 go install github.com/ugurcan-aytar/brain/cmd/brain@latest
 ```
+
+After any install path, run `brain doctor` to check that qmd + a Claude backend are both wired up.
 
 ## Quick start
 
@@ -137,6 +146,7 @@ brain chat
 |---|---|
 | `brain index` | Re-scan files and regenerate embeddings |
 | `brain status` | Show index health and brain config |
+| `brain doctor` | Verify qmd + LLM backend are installed and configured |
 
 ## Chat mode
 
