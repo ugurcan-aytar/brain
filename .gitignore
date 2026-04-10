@@ -15,3 +15,11 @@ history/
 .idea/
 
 .claude/
+
+# Demo reproducibility artifacts — the rendered GIFs/PNG shipped in
+# the README are the source of truth. The vhs tape files, demo
+# collections, and logo render script are dev-only and kept local.
+/assets/render_logo.py
+/assets/demo-notes/
+/assets/demo-notes-v2/
+/assets/demos/*.tape
