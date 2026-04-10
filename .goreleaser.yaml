@@ -60,6 +60,18 @@ homebrew_casks:
       # default GITHUB_TOKEN is scoped to the current repo only.
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
+    # Strip the macOS Gatekeeper quarantine flag after install.
+    # Without this, Apple blocks the unsigned binary with a
+    # "could not verify brain is free of malware" dialog on first
+    # run and the user has to run `xattr -dr com.apple.quarantine`
+    # manually. Proper notarization needs an Apple Developer ID
+    # ($99/yr) — not worth it for a side project.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/brain"]
+          end
     homepage: https://github.com/ugurcan-aytar/brain
     description: Conversational knowledge base over your local notes
     license: MIT
