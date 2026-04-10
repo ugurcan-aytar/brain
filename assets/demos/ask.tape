@@ -26,12 +26,14 @@ Set Padding 40
 Hide
 Type "cd /Users/ugurcanaytar/Desktop/Projects/BrainGo/brain"
 Enter
+Type "export PATH=$PWD:$PATH"
+Enter
 Type "clear"
 Enter
 Show
 
 Sleep 500ms
-Type `./brain ask -c brain-demo -M recall "What's the difference between CP and AP systems?"`
+Type `brain ask -c brain-demo -M recall "What's the difference between CP and AP systems?"`
 Sleep 800ms
 Enter
 Sleep 25s

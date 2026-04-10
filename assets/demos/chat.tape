@@ -19,12 +19,14 @@ Set Padding 40
 Hide
 Type "cd /Users/ugurcanaytar/Desktop/Projects/BrainGo/brain"
 Enter
+Type "export PATH=$PWD:$PATH"
+Enter
 Type "clear"
 Enter
 Show
 
 Sleep 500ms
-Type "./brain chat -c brain-demo"
+Type "brain chat -c brain-demo"
 Sleep 500ms
 Enter
 Sleep 2s
