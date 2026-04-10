@@ -1,17 +1,15 @@
 <div align="center">
 
-```
-  ██████╗ ██████╗  █████╗ ██╗███╗   ██╗
-  ██╔══██╗██╔══██╗██╔══██╗██║████╗  ██║
-  ██████╔╝██████╔╝███████║██║██╔██╗ ██║
-  ██╔══██╗██╔══██╗██╔══██║██║██║╚██╗██║
-  ██████╔╝██║  ██║██║  ██║██║██║ ╚████║
-  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
-```
+<pre>
+██████╗ ██████╗  █████╗ ██╗███╗   ██╗
+██╔══██╗██╔══██╗██╔══██╗██║████╗  ██║
+██████╔╝██████╔╝███████║██║██╔██╗ ██║
+██╔══██╗██╔══██╗██╔══██║██║██║╚██╗██║
+██████╔╝██║  ██║██║  ██║██║██║ ╚████║
+╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝
+</pre>
 
 ### Conversational knowledge base over your local notes
-
-_No cloud sync. No vendor lock-in. Just your files and Claude._
 
 [![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
