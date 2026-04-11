@@ -17,7 +17,7 @@ type Settings struct {
 }
 
 var Default = Settings{
-	Model:                "claude-opus-4-6",
+	Model:                "claude-sonnet-4-6",
 	MaxTokens:            16384,
 	TopK:                 7,
 	MinScore:             0.2,

@@ -49,7 +49,7 @@ func NewChatCmd() *cobra.Command {
 			return Chat(cmd.Context(), opts)
 		},
 	}
-	cmd.Flags().StringVarP(&opts.Model, "model", "m", "opus", "Claude model (opus, sonnet, haiku)")
+	cmd.Flags().StringVarP(&opts.Model, "model", "m", "sonnet", "Claude model (sonnet, opus, haiku)")
 	cmd.Flags().StringVarP(&opts.Collection, "collection", "c", "", "Scope chat to a specific collection (skips the picker)")
 	return cmd
 }
@@ -95,7 +95,7 @@ func resolveCommand(input string) string {
 func Chat(ctx context.Context, opts ChatOptions) error {
 	currentModel := opts.Model
 	if currentModel == "" {
-		currentModel = "opus"
+		currentModel = "sonnet"
 	}
 
 	ui.PrintLogo()
@@ -255,7 +255,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 				}
 			} else if !llm.IsValidModel(rest) {
 				fmt.Println(ui.Yellow.Render("  Unknown model: " + rest))
-				fmt.Println(ui.Dim.Render("  Available: sonnet, opus, haiku"))
+				fmt.Println(ui.Dim.Render("  Available: sonnet (default), opus, haiku"))
 				fmt.Println(ui.Dim.Render("  Or use a full model ID like claude-sonnet-4-6"))
 				fmt.Println()
 			} else {

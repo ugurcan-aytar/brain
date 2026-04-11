@@ -18,8 +18,8 @@ type ModelChoice struct {
 }
 
 var ModelChoices = []ModelChoice{
-	{"sonnet", "claude-sonnet-4-6", "balanced"},
-	{"opus", "claude-opus-4-6", "deepest reasoning, default"},
+	{"sonnet", "claude-sonnet-4-6", "balanced, default"},
+	{"opus", "claude-opus-4-6", "deepest reasoning"},
 	{"haiku", "claude-haiku-4-5", "fastest"},
 }
 
@@ -27,7 +27,7 @@ var ModelChoices = []ModelChoice{
 // names pass through so users can supply full IDs directly.
 func ResolveModel(name string) string {
 	if name == "" {
-		return Models["opus"]
+		return Models["sonnet"]
 	}
 	if id, ok := Models[name]; ok {
 		return id

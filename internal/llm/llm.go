@@ -35,7 +35,7 @@ type Message struct {
 
 // Options controls a streaming LLM call.
 type Options struct {
-	Model string // alias or full model ID; empty defaults to opus
+	Model string // alias or full model ID; empty defaults to sonnet
 }
 
 // Stream sends the conversation to the active backend and streams the

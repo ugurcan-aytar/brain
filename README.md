@@ -89,7 +89,7 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **`/challenge`** — re-score an answer against a different set of sources to check it
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
 - **Collection picker** — multi-select UI to scope a question to specific note folders
-- **Model switching** — swap between `opus`, `sonnet`, and `haiku` mid-session
+- **Model switching** — swap between `sonnet` (default), `opus`, and `haiku` mid-session
 - **Q&A history** — every exchange is saved as a timestamped markdown file you can grep later
 - **Ctrl+C everywhere** — cancel retrieval or streaming at any time without leaving your terminal in a broken state
 - **Pluggable backend** — native Anthropic API, any OpenAI-compatible endpoint (OpenAI, Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together…), or the local `claude` CLI as a fallback
@@ -188,7 +188,7 @@ brain chat
 **Flags on `ask`:**
 
 - `-c, --collection <name>` — scope to a single collection (skips the picker)
-- `-m, --model <model>` — `opus` (default), `sonnet`, `haiku`, or a full Anthropic model ID
+- `-m, --model <model>` — `sonnet` (default), `opus`, `haiku`, or a full Anthropic model ID
 - `-M, --mode <mode>` — override the auto-detected thinking mode: `auto`, `recall`, `analysis`, `decision`, `synthesis`
 
 **Flags on `chat`:**
@@ -256,7 +256,7 @@ Defaults live in [`internal/config/config.go`](internal/config/config.go). The i
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `Model` | `claude-opus-4-6` | Default Claude model |
+| `Model` | `claude-sonnet-4-6` | Default Claude model |
 | `MaxTokens` | `16384` | Response length cap |
 | `TopK` | `7` | Chunks to retrieve per question |
 | `MinScore` | `0.2` | Minimum relevance to include a chunk |

@@ -16,7 +16,7 @@ func TestResolveModel(t *testing.T) {
 		{"opus", "claude-opus-4-6"},
 		{"haiku", "claude-haiku-4-5"},
 		{"claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20241022"}, // passes through
-		{"", "claude-opus-4-6"}, // empty defaults to opus
+		{"", "claude-sonnet-4-6"}, // empty defaults to sonnet
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
