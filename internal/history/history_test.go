@@ -83,7 +83,16 @@ func TestSaveRoundTrip(t *testing.T) {
 		{DisplayPath: "notes/b.md", Score: 0.42, Snippet: "y"},
 	}
 
-	path, err := Save("What is attention?", "Attention is all you need.", chunks, "ask")
+	path, err := Save(Entry{
+		Question:    "What is attention?",
+		Answer:      "Attention is all you need.",
+		Sources:     chunks,
+		Mode:        "ask",
+		Thinking:    "analysis",
+		Model:       "sonnet (claude-sonnet-4-6)",
+		Collections: []string{"papers", "notes"},
+		Elapsed:     12 * time.Second,
+	})
 	if err != nil {
 		t.Fatalf("Save returned error: %v", err)
 	}
@@ -105,6 +114,10 @@ func TestSaveRoundTrip(t *testing.T) {
 		"# What is attention?",
 		"Attention is all you need.",
 		"**Mode:** ask",
+		"**Thinking:** analysis",
+		"**Model:** sonnet (claude-sonnet-4-6)",
+		"**Collections:** papers, notes",
+		"**Elapsed:** 12s",
 		"notes/a.md (85%)",
 		"notes/b.md (42%)",
 		"## Sources",
@@ -128,8 +141,63 @@ func TestSaveHandlesEmptySources(t *testing.T) {
 	t.Setenv("BRAIN_HISTORY_DIR", tmp)
 	t.Setenv("XDG_STATE_HOME", "")
 
-	_, err := Save("quick q", "quick a", nil, "chat")
+	_, err := Save(Entry{Question: "quick q", Answer: "quick a", Mode: "chat"})
 	if err != nil {
 		t.Fatalf("Save with empty sources should not error: %v", err)
+	}
+}
+
+func TestListAndSearch(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("BRAIN_HISTORY_DIR", tmp)
+	t.Setenv("XDG_STATE_HOME", "")
+
+	// Drop a stray non-matching file to make sure List skips it.
+	if err := os.WriteFile(filepath.Join(tmp, "stray.md"), []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Save(Entry{Question: "first question about transformers", Answer: "the answer", Mode: "ask", Thinking: "analysis"}); err != nil {
+		t.Fatal(err)
+	}
+	// Tiny sleep so filenames differ by at least a second.
+	time.Sleep(1100 * time.Millisecond)
+	if _, err := Save(Entry{Question: "second question about diffusion", Answer: "another", Mode: "chat"}); err != nil {
+		t.Fatal(err)
+	}
+
+	recs, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 records (stray.md skipped), got %d", len(recs))
+	}
+	// Newest first.
+	if !strings.Contains(recs[0].Question, "diffusion") {
+		t.Errorf("first record should be newest (diffusion), got %q", recs[0].Question)
+	}
+	if recs[0].Mode != "chat" {
+		t.Errorf("mode should be parsed, got %q", recs[0].Mode)
+	}
+
+	matches, err := Search("transformers")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if !strings.Contains(matches[0].Question, "transformers") {
+		t.Errorf("search hit wrong record: %q", matches[0].Question)
+	}
+
+	// Delete round-trip.
+	if err := Delete(matches[0]); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	recs2, _ := List()
+	if len(recs2) != 1 {
+		t.Errorf("expected 1 record after delete, got %d", len(recs2))
 	}
 }

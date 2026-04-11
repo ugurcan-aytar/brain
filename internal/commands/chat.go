@@ -399,7 +399,16 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		fmt.Println()
 		fmt.Println(ui.Dim.Render(fmt.Sprintf("  responded in %s", formatElapsed(streamElapsed))))
 		ui.PrintSources(chunks, "")
-		if _, err := history.Save(input, response, chunks, "chat"); err != nil {
+		if _, err := history.Save(history.Entry{
+			Question:    input,
+			Answer:      response,
+			Sources:     chunks,
+			Mode:        "chat",
+			Thinking:    string(activeModeLabel),
+			Model:       llm.Display(currentModel),
+			Collections: activeCollections,
+			Elapsed:     streamElapsed,
+		}); err != nil {
 			fmt.Println(ui.Dim.Render("  (history not saved: " + err.Error() + ")"))
 		}
 	}
@@ -557,7 +566,16 @@ func runChallenge(
 	fmt.Println()
 	fmt.Println(ui.Dim.Render(fmt.Sprintf("  responded in %s", formatElapsed(streamElapsed))))
 	ui.PrintSources(challengeChunks, "Challenge Sources")
-	if _, err := history.Save("[Challenge] "+lastUser.Content, response, challengeChunks, "chat"); err != nil {
+	if _, err := history.Save(history.Entry{
+		Question:    "[Challenge] " + lastUser.Content,
+		Answer:      response,
+		Sources:     challengeChunks,
+		Mode:        "chat",
+		Thinking:    "challenge",
+		Model:       llm.Display(currentModel),
+		Collections: challengeCols,
+		Elapsed:     streamElapsed,
+	}); err != nil {
 		fmt.Println(ui.Dim.Render("  (history not saved: " + err.Error() + ")"))
 	}
 	return nil

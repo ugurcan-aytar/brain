@@ -37,7 +37,8 @@ const longDescription = `Second Brain CLI -- conversational knowledge base over 
     brain index                  Re-index and generate embeddings
     brain status                 Show index health and config
     brain doctor                 Check required dependencies and config
-    brain upgrade                Show how to upgrade to the latest release`
+    brain upgrade                Show how to upgrade to the latest release
+    brain history                Browse saved Q&A history`
 
 func main() {
 	// Restore terminal state on any exit path — readline + huh both put the
@@ -108,6 +109,7 @@ func newRootCmd() *cobra.Command {
 		commands.NewFilesCmd(),
 		commands.NewDoctorCmd(),
 		commands.NewUpgradeCmd(),
+		commands.NewHistoryCmd(),
 	)
 	return root
 }

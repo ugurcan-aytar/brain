@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
@@ -118,9 +119,11 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 
 	systemPrompt := prompt.BuildSystemPrompt(chunks, question, modeOverride)
 
+	streamStart := time.Now()
 	answer, err := llm.Stream(ctx, systemPrompt, []llm.Message{
 		{Role: llm.RoleUser, Content: question},
 	}, llm.Options{Model: opts.Model})
+	elapsed := time.Since(streamStart)
 	if err != nil {
 		return err
 	}
@@ -132,7 +135,16 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	ui.PrintSources(chunks, "")
 	ui.PrintLogo()
 
-	if _, err := history.Save(question, answer, chunks, "ask"); err != nil {
+	if _, err := history.Save(history.Entry{
+		Question:    question,
+		Answer:      answer,
+		Sources:     chunks,
+		Mode:        "ask",
+		Thinking:    string(active),
+		Model:       llm.Display(opts.Model),
+		Collections: collections,
+		Elapsed:     elapsed,
+	}); err != nil {
 		fmt.Println(ui.Dim.Render("  (history not saved: " + err.Error() + ")"))
 	}
 	PrintUpdateBanner()
