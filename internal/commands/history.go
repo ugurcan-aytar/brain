@@ -25,6 +25,7 @@ func NewHistoryCmd() *cobra.Command {
 		Long: `Browse the timestamped Q&A archive brain writes after every answer.
 
   brain history                 List recent entries (newest first)
+  brain history browse          Interactive picker (filter, view, delete)
   brain history search <query>  Find entries containing <query>
   brain history view <id>       Show the full markdown of an entry
   brain history rm <id>         Delete an entry
@@ -40,6 +41,7 @@ func NewHistoryCmd() *cobra.Command {
 	cmd.AddCommand(newHistoryViewCmd())
 	cmd.AddCommand(newHistoryRmCmd())
 	cmd.AddCommand(newHistoryPathCmd())
+	cmd.AddCommand(NewHistoryBrowseCmd())
 	return cmd
 }
 

@@ -58,6 +58,18 @@ It's a **TUI-first app**, not a thin CLI wrapper around an API call. You get an 
   <img src="assets/demos/search.gif" alt="brain search demo" width="760">
 </p>
 
+**`brain history`** — every answer is archived on disk with model/collections/elapsed metadata. The default list is scriptable; `search` and `view` drill in:
+
+<p align="center">
+  <img src="assets/demos/history.gif" alt="brain history demo" width="760">
+</p>
+
+**`brain history browse`** — interactive TUI picker: `/` fuzzy-filters your past questions, `f` kicks a full-text search across answer bodies, `enter` opens the viewer, `esc` pops back to the list, `d` deletes. Built on `bubbles/list` + `viewport` so it pages, scrolls, and stays out of your scrollback:
+
+<p align="center">
+  <img src="assets/demos/history-browse.gif" alt="brain history browse demo" width="760">
+</p>
+
 ## Table of contents
 
 - [Demo](#demo)
@@ -86,11 +98,11 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **`brain ask "<question>"`** — one-shot Q&A, cited sources, streaming answer
 - **`brain chat`** — interactive multi-turn REPL with slash commands, tab completion, and mid-response cancellation
 - **`brain search "<query>"`** — raw retrieval, no LLM, for verifying your index
+- **`brain history`** — every Q&A is saved as a timestamped markdown file with model/collections/elapsed metadata; `brain history browse` opens an interactive TUI picker with `/` filter on questions, `f` for full-text search across answers, `enter` to view, `d` to delete
 - **`/challenge`** — re-score an answer against a different set of sources to check it
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
 - **Collection picker** — multi-select UI to scope a question to specific note folders
 - **Model switching** — swap between `sonnet` (default), `opus`, and `haiku` mid-session
-- **Q&A history** — every exchange is saved as a timestamped markdown file you can grep later
 - **Ctrl+C everywhere** — cancel retrieval or streaming at any time without leaving your terminal in a broken state
 - **Pluggable backend** — native Anthropic API, any OpenAI-compatible endpoint (OpenAI, Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together…), or the local `claude` CLI as a fallback
 
@@ -209,6 +221,23 @@ brain chat
 
 - `--name <name>` — override the default collection name (folder basename)
 - `--mask <glob>` — override the default file glob (`**/*.{txt,md}`)
+
+### History
+
+Every answer is archived as a timestamped markdown file (default `~/.brain/history`, overridable via `BRAIN_HISTORY_DIR`). Each file captures the question, answer, sources, *and* the mode, model, collections, and elapsed time. Browse from the terminal:
+
+| Command | Description |
+|---|---|
+| `brain history` | List the 10 most recent entries, newest first |
+| `brain history browse` | Interactive TUI picker — `/` to filter by question, `f` to full-text search bodies, `enter` to view, `d` to delete, `esc` back |
+| `brain history search <query>` | Non-interactive full-text search |
+| `brain history view <id>` | Render an entry (id from the list, 1-based) |
+| `brain history rm <id>` | Delete an entry |
+| `brain history path` | Print the history directory path |
+
+**Flags on `history`:**
+
+- `-n, --limit <N>` — number of entries to show in the default list (default `10`)
 
 ### Maintenance
 
