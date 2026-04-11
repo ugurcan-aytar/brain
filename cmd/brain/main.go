@@ -19,7 +19,7 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 const longDescription = `Second Brain CLI -- conversational knowledge base over your local notes
 
