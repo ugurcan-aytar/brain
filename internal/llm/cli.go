@@ -18,13 +18,19 @@ import (
 )
 
 // claudeCLIEvent matches the shape emitted by `claude --output-format stream-json --verbose`.
+// We care about two delta types: text_delta (the visible response) and
+// thinking_delta (the extended-thinking phase that opus + sonnet-thinking
+// fire before emitting text). The thinking field carries the reasoning
+// text but we only use it to drive a dim progress indicator — the model's
+// internal monologue never hits the terminal.
 type claudeCLIEvent struct {
 	Type  string `json:"type"`
 	Event struct {
 		Type  string `json:"type"`
 		Delta struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
 		} `json:"delta"`
 	} `json:"event"`
 }
@@ -74,6 +80,7 @@ func streamViaCLI(
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	var full strings.Builder
+	var thinking thinkingIndicator
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			_ = cmd.Process.Kill()
@@ -87,7 +94,19 @@ func streamViaCLI(
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			continue
 		}
-		if ev.Type == "stream_event" && ev.Event.Type == "content_block_delta" && ev.Event.Delta.Type == "text_delta" {
+		if ev.Type != "stream_event" || ev.Event.Type != "content_block_delta" {
+			continue
+		}
+		switch ev.Event.Delta.Type {
+		case "thinking_delta":
+			// Update the live "💭 thinking… 42s" indicator. We don't
+			// render the thinking text itself — it's the model's
+			// internal monologue, not the response.
+			thinking.Note()
+		case "text_delta":
+			// First text delta ends the thinking phase. Finalize is
+			// idempotent so it's safe to call on every text event.
+			thinking.Finalize()
 			text := stripAnsiRemnants(ev.Event.Delta.Text)
 			if text != "" {
 				full.WriteString(text)
@@ -95,6 +114,10 @@ func streamViaCLI(
 			}
 		}
 	}
+	// If the stream ended while we were still in the thinking phase
+	// (unusual but possible on errors), make sure we don't leave the
+	// live indicator dangling on the terminal.
+	thinking.Finalize()
 
 	waitErr := cmd.Wait()
 	if ctx.Err() != nil {

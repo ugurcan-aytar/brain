@@ -39,12 +39,17 @@ type anthropicRequest struct {
 
 // sseEvent is the subset of each Server-Sent Event we care about — the
 // Anthropic stream reuses HTTP SSE format with `event:` and `data:` lines.
+// Two delta types matter: text_delta (the visible response) and
+// thinking_delta (the extended-thinking phase opus + sonnet-thinking
+// fire before emitting text). We only use thinking_delta to drive a
+// dim progress indicator — the reasoning text itself is never printed.
 type sseEvent struct {
-	Type string          `json:"type"`
+	Type string `json:"type"`
 	// For content_block_delta events, the delta we care about lives here.
 	Delta struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Thinking string `json:"thinking"`
 	} `json:"delta"`
 	// message_start carries usage info etc. — not parsed.
 	Index int `json:"index,omitempty"`
@@ -115,6 +120,7 @@ func streamViaSDK(
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	var full strings.Builder
+	var thinking thinkingIndicator
 
 	for scanner.Scan() {
 		if ctx.Err() != nil {
@@ -134,11 +140,21 @@ func streamViaSDK(
 		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
 			continue
 		}
-		if ev.Type == "content_block_delta" && ev.Delta.Type == "text_delta" && ev.Delta.Text != "" {
-			full.WriteString(ev.Delta.Text)
-			renderer.Write(ev.Delta.Text)
+		if ev.Type != "content_block_delta" {
+			continue
+		}
+		switch ev.Delta.Type {
+		case "thinking_delta":
+			thinking.Note()
+		case "text_delta":
+			thinking.Finalize()
+			if ev.Delta.Text != "" {
+				full.WriteString(ev.Delta.Text)
+				renderer.Write(ev.Delta.Text)
+			}
 		}
 	}
+	thinking.Finalize()
 
 	if err := scanner.Err(); err != nil {
 		if ctx.Err() != nil {
