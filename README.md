@@ -20,8 +20,6 @@
 
 It's a **TUI-first app**, not a thin CLI wrapper around an API call. You get an interactive multi-select collection picker, a readline REPL with tab-completion and unique-prefix slash commands, a streaming markdown renderer that colors headings/code/lists live as tokens arrive, mid-response Ctrl+C cancellation, and model/mode pickers you can invoke mid-session. Built on Cobra, [charmbracelet/huh](https://github.com/charmbracelet/huh) (pickers), [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) (styling), and [chzyer/readline](https://github.com/chzyer/readline) (REPL). See [Chat mode](#chat-mode) for the full slash command surface.
 
-This is the Go port of the original [Second Brain CLI](https://github.com/ugurcan-aytar/brain) (written in TypeScript/Bun). Same features, same design, single static binary, no runtime to install.
-
 ## Demo
 
 **One-shot Q&A** — retrieval spinner, streaming markdown answer, cited sources, closing logo:
