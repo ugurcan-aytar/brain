@@ -16,10 +16,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/commands"
+	"github.com/ugurcan-aytar/brain/internal/version"
 	"golang.org/x/term"
 )
-
-const version = "0.1.3"
 
 const longDescription = `Second Brain CLI -- conversational knowledge base over your local notes
 
@@ -37,7 +36,8 @@ const longDescription = `Second Brain CLI -- conversational knowledge base over 
   Maintenance:
     brain index                  Re-index and generate embeddings
     brain status                 Show index health and config
-    brain doctor                 Check required dependencies and config`
+    brain doctor                 Check required dependencies and config
+    brain upgrade                Show how to upgrade to the latest release`
 
 func main() {
 	// Restore terminal state on any exit path — readline + huh both put the
@@ -58,6 +58,12 @@ func main() {
 		restore()
 		os.Exit(143)
 	}()
+
+	// Fire a background "is there a newer release?" check. No-op when
+	// stdout isn't a terminal or BRAIN_NO_UPDATE_CHECK is set. Safe to
+	// call unconditionally — the check is rate-limited to once per day
+	// and runs in a goroutine.
+	commands.CheckForUpdate()
 
 	if err := newRootCmd().ExecuteContext(context.Background()); err != nil {
 		restore()
@@ -86,7 +92,7 @@ func newRootCmd() *cobra.Command {
 		Use:           "brain",
 		Short:         "Conversational knowledge base over your local notes",
 		Long:          longDescription,
-		Version:       version,
+		Version:       version.Current,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -101,6 +107,7 @@ func newRootCmd() *cobra.Command {
 		commands.NewIndexCmd(),
 		commands.NewFilesCmd(),
 		commands.NewDoctorCmd(),
+		commands.NewUpgradeCmd(),
 	)
 	return root
 }

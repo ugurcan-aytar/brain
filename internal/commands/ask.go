@@ -135,6 +135,7 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	if _, err := history.Save(question, answer, chunks, "ask"); err != nil {
 		fmt.Println(ui.Dim.Render("  (history not saved: " + err.Error() + ")"))
 	}
+	PrintUpdateBanner()
 	return nil
 }
 

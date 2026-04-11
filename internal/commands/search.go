@@ -68,5 +68,6 @@ func Search(parent context.Context, query string, collection string) error {
 	for i, r := range results {
 		ui.PrintSearchResult(r, i)
 	}
+	PrintUpdateBanner()
 	return nil
 }

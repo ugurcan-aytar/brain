@@ -155,6 +155,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 	}
 
 	printHelp()
+	PrintUpdateBanner()
 
 	var (
 		historyMessages []llm.Message
