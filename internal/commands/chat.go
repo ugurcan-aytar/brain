@@ -15,17 +15,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
-	"github.com/chzyer/readline"
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/history"
 	"github.com/ugurcan-aytar/brain/internal/llm"
@@ -57,10 +54,7 @@ func NewChatCmd() *cobra.Command {
 	return cmd
 }
 
-var slashCommands = []struct {
-	name string
-	help string
-}{
+var slashCommands = []slashCommand{
 	{"/help", "Show this message"},
 	{"/mode", "Set thinking mode (auto, recall, analysis, decision, synthesis)"},
 	{"/model", "Switch Claude model"},
@@ -69,12 +63,6 @@ var slashCommands = []struct {
 	{"/challenge", "Cross-reference last Q&A against different sources"},
 	{"/clear", "Reset conversation history"},
 	{"/quit", "Exit chat"},
-}
-
-var ansiStripRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\[\?[0-9]*[a-zA-Z]`)
-
-func stripANSI(s string) string {
-	return ansiStripRegex.ReplaceAllString(s, "")
 }
 
 // resolveCommand maps an input line to a slash command via exact match or
@@ -168,14 +156,6 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 
 	printHelp()
 
-	rl, err := newReadline()
-	if err != nil {
-		return fmt.Errorf("init readline: %w", err)
-	}
-	// Closure captures the variable so reassignments (after huh pickers take
-	// over the TTY) are still cleaned up on return.
-	defer func() { rl.Close() }()
-
 	var (
 		historyMessages []llm.Message
 		lastChunks      []retriever.Chunk
@@ -183,13 +163,17 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 	)
 
 	for {
-		line, readErr := rl.Readline()
-		if readErr == io.EOF {
+		line, result, readErr := readChatInput(slashCommands)
+		if readErr != nil {
+			return readErr
+		}
+		if result == chatInputEOF {
 			fmt.Println(ui.Dim.Render("Goodbye."))
 			return nil
 		}
-		if errors.Is(readErr, readline.ErrInterrupt) {
-			// Empty-line Ctrl+C: double-tap within 2s exits.
+		if result == chatInputInterrupted {
+			// Double-tap Ctrl+C within 2s exits. Single tap prints a hint
+			// and clears whatever was partially typed.
 			if time.Since(lastCtrlC) < 2*time.Second {
 				fmt.Println(ui.Dim.Render("Goodbye."))
 				return nil
@@ -200,13 +184,9 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			fmt.Println()
 			continue
 		}
-		if readErr != nil {
-			return readErr
-		}
 
 		lastCtrlC = time.Time{}
-		raw := strings.TrimSpace(line)
-		input := stripANSI(raw)
+		input := strings.TrimSpace(line)
 		if input == "" {
 			continue
 		}
@@ -242,13 +222,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		}
 
 		if resolved == "/collections" {
-			rl.Close()
 			picked, perr := picker.Pick(ctx, picker.PickOptions{})
-			newRl, rerr := newReadline()
-			if rerr != nil {
-				return rerr
-			}
-			rl = newRl
 			if perr != nil && !errors.Is(perr, picker.ErrCancelled) {
 				fmt.Println(ui.Red.Render("  " + perr.Error()))
 				fmt.Println()
@@ -265,13 +239,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		if resolved == "/model" {
 			rest := strings.TrimSpace(strings.TrimPrefix(input, "/model"))
 			if rest == "" {
-				rl.Close()
 				picked, perr := modelPicker(currentModel)
-				newRl, rerr := newReadline()
-				if rerr != nil {
-					return rerr
-				}
-				rl = newRl
 				if perr == nil {
 					currentModel = picked
 					fmt.Println(ui.Dim.Render("  Switched to " + llm.Display(currentModel)))
@@ -313,7 +281,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		}
 
 		if resolved == "/challenge" {
-			if err := runChallenge(ctx, &rl, &historyMessages, &lastChunks, currentModel); err != nil {
+			if err := runChallenge(ctx, &historyMessages, &lastChunks, currentModel); err != nil {
 				return err
 			}
 			continue
@@ -398,20 +366,12 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		historyMessages = append(historyMessages, llm.Message{Role: llm.RoleUser, Content: input})
 		historyMessages = trimHistory(historyMessages)
 
-		rl.Close()
 		response, streamErr := llm.Stream(streamCtx, systemPrompt, historyMessages, llm.Options{Model: currentModel})
 		// Capture user-cancellation BEFORE we run our own cleanup cancel() —
 		// otherwise streamCtx.Err() below would always be non-nil and we'd
 		// silently drop every successful response from the history, which
 		// breaks both multi-turn conversations and /challenge.
 		userCancelled := streamCtx.Err() != nil
-		newRl, rerr := newReadline()
-		if rerr != nil {
-			cancel()
-			<-done
-			return rerr
-		}
-		rl = newRl
 		cancel()
 		<-done
 
@@ -466,34 +426,11 @@ func trimHistory(msgs []llm.Message) []llm.Message {
 	return msgs[len(msgs)-max:]
 }
 
-// newReadline constructs a readline.Instance wired up with slash-command
-// tab completion and an `❯ ` prompt.
-func newReadline() (*readline.Instance, error) {
-	completer := readline.NewPrefixCompleter(slashCompleterItems()...)
-	return readline.NewEx(&readline.Config{
-		Prompt:                 ui.Cyan.Render("❯ "),
-		HistoryLimit:           200,
-		InterruptPrompt:        "^C",
-		EOFPrompt:              "",
-		DisableAutoSaveHistory: true,
-		AutoComplete:           completer,
-	})
-}
-
-func slashCompleterItems() []readline.PrefixCompleterInterface {
-	items := make([]readline.PrefixCompleterInterface, 0, len(slashCommands))
-	for _, c := range slashCommands {
-		items = append(items, readline.PcItem(c.name))
-	}
-	return items
-}
-
 // runChallenge handles the /challenge flow: pick a second set of collections,
 // retrieve against them, and stream a re-scored answer. Mutates the caller's
 // history and lastChunks on success so /sources reflects the challenge run.
 func runChallenge(
 	ctx context.Context,
-	rlPtr **readline.Instance,
 	historyMessages *[]llm.Message,
 	lastChunks *[]retriever.Chunk,
 	currentModel string,
@@ -519,13 +456,7 @@ func runChallenge(
 		return nil
 	}
 
-	(*rlPtr).Close()
 	challengeCols, err := picker.Pick(ctx, picker.PickOptions{Title: "Challenge with collections"})
-	newRl, rerr := newReadline()
-	if rerr != nil {
-		return rerr
-	}
-	*rlPtr = newRl
 	if err != nil {
 		if !errors.Is(err, picker.ErrCancelled) {
 			fmt.Println(ui.Red.Render("  " + err.Error()))
@@ -572,21 +503,20 @@ func runChallenge(
 
 	challengePrompt := prompt.BuildChallengePrompt(lastUser.Content, lastAssistant.Content, *lastChunks, challengeChunks)
 
-	(*rlPtr).Close()
 	response, streamErr := llm.Stream(challengeCtx, challengePrompt, []llm.Message{
 		{Role: llm.RoleUser, Content: "Challenge the previous answer using these new sources."},
 	}, llm.Options{Model: currentModel})
-	newRl2, rerr2 := newReadline()
-	if rerr2 != nil {
-		return rerr2
-	}
-	*rlPtr = newRl2
+	// Same userCancelled capture as the main loop: check the context
+	// before the defer's cancel() runs, otherwise every successful stream
+	// would be reported as cancelled and the challenge response would
+	// never land in history.
+	userCancelled := challengeCtx.Err() != nil
 
 	if streamErr != nil {
 		fmt.Println(ui.Red.Render("  " + streamErr.Error()))
 		return nil
 	}
-	if challengeCtx.Err() != nil {
+	if userCancelled {
 		fmt.Println(ui.Dim.Render("\n  Cancelled."))
 		fmt.Println()
 		return nil
