@@ -9,4 +9,4 @@
 // always inject the tag.
 package version
 
-var Current = "0.1.4"
+var Current = "0.1.5"
