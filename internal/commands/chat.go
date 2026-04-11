@@ -191,6 +191,11 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		if input == "" {
 			continue
 		}
+		// Re-print the submitted question so it lives in persistent
+		// scrollback — the bubbletea textinput returns "" on submit
+		// and the subsequent spinner would otherwise overwrite the
+		// last-frame question below it.
+		fmt.Println(ui.Cyan.Render("❯ ") + input)
 
 		resolved := resolveCommand(input)
 
@@ -367,13 +372,9 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		historyMessages = append(historyMessages, llm.Message{Role: llm.RoleUser, Content: input})
 		historyMessages = trimHistory(historyMessages)
 
-		// Give the user something to look at during the Stream warmup —
-		// opus + claude CLI can sit silent for 20-40s before the first
-		// token arrives, which reads like a hang.
-		streamDone := make(chan struct{})
-		go printWaitingIndicator(streamCtx, streamDone, llm.Display(currentModel))
+		streamStart := time.Now()
 		response, streamErr := llm.Stream(streamCtx, systemPrompt, historyMessages, llm.Options{Model: currentModel})
-		close(streamDone)
+		streamElapsed := time.Since(streamStart)
 		// Capture user-cancellation BEFORE we run our own cleanup cancel() —
 		// otherwise streamCtx.Err() below would always be non-nil and we'd
 		// silently drop every successful response from the history, which
@@ -395,6 +396,8 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		}
 
 		historyMessages = append(historyMessages, llm.Message{Role: llm.RoleAssistant, Content: response})
+		fmt.Println()
+		fmt.Println(ui.Dim.Render(fmt.Sprintf("  responded in %s", formatElapsed(streamElapsed))))
 		ui.PrintSources(chunks, "")
 		if _, err := history.Save(input, response, chunks, "chat"); err != nil {
 			fmt.Println(ui.Dim.Render("  (history not saved: " + err.Error() + ")"))
@@ -422,48 +425,18 @@ func watchSIGINT(ctx context.Context, cancel context.CancelFunc) <-chan struct{}
 	return done
 }
 
-// printWaitingIndicator draws a one-line "waiting for <model>" heartbeat
-// while llm.Stream warms up. opus + the claude CLI subprocess can sit
-// silent for 20-40s before the first token arrives — without this the
-// REPL looks frozen and users reach for Ctrl+C. The indicator stops as
-// soon as `done` closes (which the caller does right after Stream
-// returns) OR the context is cancelled.
-//
-// Deliberately simple: prints once after a short delay (to avoid
-// flicker for fast backends), then updates the elapsed time on a
-// rolling cursor-overwrite until done. Stream will print its own
-// output after we stop, so our line gets scrolled up naturally.
-func printWaitingIndicator(ctx context.Context, done <-chan struct{}, modelLabel string) {
-	// Short grace period — if Stream returns fast (API key set, haiku,
-	// etc.) we never print anything and the UX stays quiet.
-	select {
-	case <-done:
-		return
-	case <-ctx.Done():
-		return
-	case <-time.After(800 * time.Millisecond):
+// formatElapsed renders a Stream duration in a dev-friendly unit — under
+// a minute it's just seconds ("43s"), over a minute it's minutes + seconds
+// ("2m13s"). Keeps the post-response footer concise regardless of how
+// slow the backend was.
+func formatElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
-
-	start := time.Now()
-	tick := time.NewTicker(500 * time.Millisecond)
-	defer tick.Stop()
-	hint := ui.Dim.Render("  Waiting for " + modelLabel + "… ")
-	// Print the initial line; subsequent updates overwrite it via \r.
-	fmt.Printf("\r%s%s", hint, ui.Dim.Render("0s"))
-	for {
-		select {
-		case <-done:
-			// Clear the indicator so Stream's output starts on a clean line.
-			fmt.Print("\r\033[K")
-			return
-		case <-ctx.Done():
-			fmt.Print("\r\033[K")
-			return
-		case <-tick.C:
-			elapsed := int(time.Since(start).Seconds())
-			fmt.Printf("\r%s%s", hint, ui.Dim.Render(fmt.Sprintf("%ds", elapsed)))
-		}
-	}
+	mins := int(d / time.Minute)
+	secs := int((d % time.Minute) / time.Second)
+	return fmt.Sprintf("%dm%ds", mins, secs)
 }
 
 // trimHistory bounds the conversation buffer at maxConversationTurns pairs
@@ -554,16 +527,11 @@ func runChallenge(
 
 	challengePrompt := prompt.BuildChallengePrompt(lastUser.Content, lastAssistant.Content, *lastChunks, challengeChunks)
 
-	// Challenge prompts are roughly 2x the size of a normal question's
-	// prompt (original chunks + new chunks + full Q&A + directive), so
-	// warmup is especially long on opus + claude CLI. Keep the user
-	// informed while we wait for the first token.
-	streamDone := make(chan struct{})
-	go printWaitingIndicator(challengeCtx, streamDone, llm.Display(currentModel))
+	streamStart := time.Now()
 	response, streamErr := llm.Stream(challengeCtx, challengePrompt, []llm.Message{
 		{Role: llm.RoleUser, Content: "Challenge the previous answer using these new sources."},
 	}, llm.Options{Model: currentModel})
-	close(streamDone)
+	streamElapsed := time.Since(streamStart)
 	// Same userCancelled capture as the main loop: check the context
 	// before the defer's cancel() runs, otherwise every successful stream
 	// would be reported as cancelled and the challenge response would
@@ -586,6 +554,8 @@ func runChallenge(
 	)
 	*lastChunks = challengeChunks
 
+	fmt.Println()
+	fmt.Println(ui.Dim.Render(fmt.Sprintf("  responded in %s", formatElapsed(streamElapsed))))
 	ui.PrintSources(challengeChunks, "Challenge Sources")
 	if _, err := history.Save("[Challenge] "+lastUser.Content, response, challengeChunks, "chat"); err != nil {
 		fmt.Println(ui.Dim.Render("  (history not saved: " + err.Error() + ")"))

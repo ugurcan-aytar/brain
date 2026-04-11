@@ -130,6 +130,12 @@ func (m chatInputModel) dropdownVisible() bool {
 }
 
 func (m chatInputModel) View() string {
+	// On submission, return an empty view so bubbletea leaves nothing
+	// in the scrollback — the chat loop re-prints the question as a
+	// normal Println, which is immune to subsequent spinner rendering.
+	if m.result == chatInputSubmitted {
+		return ""
+	}
 	var b strings.Builder
 	b.WriteString(m.input.View())
 	if !m.dropdownVisible() {
