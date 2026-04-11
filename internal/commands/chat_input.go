@@ -36,12 +36,21 @@ type slashCommand struct {
 // chatInputResult describes how a single readChatInput call ended. The
 // chat loop translates this into the same branches readline's ErrInterrupt
 // / io.EOF paths used to handle.
+//
+// IMPORTANT: chatInputPending must be the zero value. The model's initial
+// state is pending (nothing submitted yet), and View() keys off the
+// submitted state to decide whether to render the input line or a blank
+// string (the blank is how we hide the input after Enter so the chat loop
+// can re-print the question cleanly). If chatInputSubmitted were the zero
+// value, the initial View() would render blank and the user would type
+// into invisible darkness until Enter finally flipped the state.
 type chatInputResult int
 
 const (
-	chatInputSubmitted chatInputResult = iota
-	chatInputInterrupted                 // Ctrl+C pressed
-	chatInputEOF                         // Ctrl+D on an empty line
+	chatInputPending chatInputResult = iota // zero value — model hasn't finished yet
+	chatInputSubmitted
+	chatInputInterrupted // Ctrl+C pressed
+	chatInputEOF         // Ctrl+D on an empty line
 )
 
 type chatInputModel struct {
