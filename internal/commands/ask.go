@@ -74,12 +74,14 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		fmt.Println()
 	}
 
+	queries := llm.ExpandQuery(ctx, question)
+
 	var (
 		chunks     []retriever.Chunk
 		retrieveErr error
 	)
 	retrieveAction := func() {
-		chunks, retrieveErr = retriever.Retrieve(ctx, question, retriever.Options{
+		chunks, retrieveErr = retriever.RetrieveMulti(ctx, queries, retriever.Options{
 			Collections: collections,
 		})
 	}
