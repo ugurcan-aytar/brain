@@ -194,10 +194,66 @@ Keep it tight. The user wants facts from their notes, not a dissertation.`,
 4. **ASSUMPTIONS & GAPS**: What this plan assumes that the notes don't explicitly confirm.`,
 }
 
-// BuildSystemPrompt produces the adaptive system prompt combining grounding
-// rules, mode directives, and the formatted retrieved chunks. An empty
-// modeOverride falls back to classifier-detected mode (or Analysis if no
-// query is given).
+// StaticDirectives returns the stable portion of the system prompt — the
+// grounding rules, extraction guidelines, synthesis rules, all four mode
+// templates, and hard boundaries. This block is identical across turns,
+// which allows LLM backends with prompt caching to cache it once and
+// reuse it cheaply.
+func StaticDirectives() string {
+	var allModes strings.Builder
+	allModes.WriteString("RESPONSE MODES (the active mode is specified in the user context block):\n\n")
+	for _, mode := range []QueryType{Recall, Analysis, Decision, Synthesis} {
+		allModes.WriteString(fmt.Sprintf("[%s]\n%s\n\n", strings.ToUpper(string(mode)), modeDirectives[mode]))
+	}
+	return fmt.Sprintf(`You are a knowledge-grounded reasoning assistant.
+
+%s
+
+%s
+
+%s
+
+%s
+
+%s
+
+%s`,
+		groundingRules,
+		sourceProtocol,
+		deepExtraction,
+		synthesisRules,
+		allModes.String(),
+		hardBoundaries,
+	)
+}
+
+// ContextBlock formats the per-turn dynamic context: which mode is active,
+// a quality assessment, and the retrieved chunks. This gets injected into
+// the user message (not the system prompt) so the system prompt stays
+// stable across turns — a requirement for prompt caching to work.
+func ContextBlock(chunks []retriever.Chunk, query string, modeOverride QueryType) string {
+	mode := modeOverride
+	if mode == "" {
+		if query != "" {
+			mode = Classify(query)
+		} else {
+			mode = Analysis
+		}
+	}
+	quality := describeSourceQuality(chunks)
+	return fmt.Sprintf(`[Active mode: %s]
+
+%s
+
+Context from personal knowledge base:
+---
+%s
+---`, mode, quality, formatChunks(chunks))
+}
+
+// BuildSystemPrompt produces the combined system prompt for backends that
+// don't support prompt caching (OpenAI-compat, Claude CLI). For the
+// Anthropic SDK backend, use StaticDirectives() + ContextBlock() instead.
 func BuildSystemPrompt(chunks []retriever.Chunk, query string, modeOverride QueryType) string {
 	mode := modeOverride
 	if mode == "" {

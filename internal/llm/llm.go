@@ -35,7 +35,8 @@ type Message struct {
 
 // Options controls a streaming LLM call.
 type Options struct {
-	Model string // alias or full model ID; empty defaults to sonnet
+	Model        string // alias or full model ID; empty defaults to sonnet
+	ChunkContext string // per-turn context block (chunks + mode); injected into the latest user message for caching backends
 }
 
 // Stream sends the conversation to the active backend and streams the
@@ -54,7 +55,13 @@ func Stream(ctx context.Context, systemPrompt string, messages []Message, opts O
 	switch Select() {
 	case BackendAnthropicAPI:
 		fmt.Println()
-		full, err = streamViaSDK(ctx, systemPrompt, messages, ResolveModel(opts.Model), renderer)
+		sdkMessages := messages
+		sdkSystem := systemPrompt
+		if opts.ChunkContext != "" {
+			sdkSystem = systemPrompt // static directives only
+			sdkMessages = injectChunkContext(messages, opts.ChunkContext)
+		}
+		full, err = streamViaSDK(ctx, sdkSystem, sdkMessages, ResolveModel(opts.Model), renderer)
 	case BackendOpenAI:
 		fmt.Println()
 		full, err = streamViaOpenAI(ctx, systemPrompt, messages, ResolveOpenAIModel(opts.Model), renderer)
@@ -124,6 +131,24 @@ func stripAnsiRemnants(text string) string {
 		i++
 	}
 	return b.String()
+}
+
+// injectChunkContext prepends the per-turn chunk context to the last user
+// message. Older messages stay unchanged, which is what makes the
+// conversation prefix cacheable across turns.
+func injectChunkContext(messages []Message, chunkCtx string) []Message {
+	out := make([]Message, len(messages))
+	copy(out, messages)
+	for i := len(out) - 1; i >= 0; i-- {
+		if out[i].Role == RoleUser {
+			out[i] = Message{
+				Role:    RoleUser,
+				Content: chunkCtx + "\n\n" + out[i].Content,
+			}
+			break
+		}
+	}
+	return out
 }
 
 // maxTokens exposes the configured max_tokens to the SDK and CLI backends.

@@ -117,12 +117,18 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	fmt.Println(ui.Dim.Render(fmt.Sprintf("  [%s%s]", active, modeSuffix)))
 	fmt.Println()
 
-	systemPrompt := prompt.BuildSystemPrompt(chunks, question, modeOverride)
+	var systemPrompt, chunkContext string
+	if llm.Select() == llm.BackendAnthropicAPI {
+		systemPrompt = prompt.StaticDirectives()
+		chunkContext = prompt.ContextBlock(chunks, question, modeOverride)
+	} else {
+		systemPrompt = prompt.BuildSystemPrompt(chunks, question, modeOverride)
+	}
 
 	streamStart := time.Now()
 	answer, err := llm.Stream(ctx, systemPrompt, []llm.Message{
 		{Role: llm.RoleUser, Content: question},
-	}, llm.Options{Model: opts.Model})
+	}, llm.Options{Model: opts.Model, ChunkContext: chunkContext})
 	elapsed := time.Since(streamStart)
 	if err != nil {
 		return err

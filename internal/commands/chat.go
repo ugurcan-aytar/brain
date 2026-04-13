@@ -367,13 +367,19 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		fmt.Println(ui.Dim.Render(fmt.Sprintf("  [%s%s]", activeModeLabel, modeSuffix)))
 		fmt.Println()
 
-		systemPrompt := prompt.BuildSystemPrompt(chunks, input, modeOverride)
+		var systemPrompt, chunkContext string
+		if llm.Select() == llm.BackendAnthropicAPI {
+			systemPrompt = prompt.StaticDirectives()
+			chunkContext = prompt.ContextBlock(chunks, input, modeOverride)
+		} else {
+			systemPrompt = prompt.BuildSystemPrompt(chunks, input, modeOverride)
+		}
 
 		historyMessages = append(historyMessages, llm.Message{Role: llm.RoleUser, Content: input})
 		historyMessages = trimHistory(historyMessages)
 
 		streamStart := time.Now()
-		response, streamErr := llm.Stream(streamCtx, systemPrompt, historyMessages, llm.Options{Model: currentModel})
+		response, streamErr := llm.Stream(streamCtx, systemPrompt, historyMessages, llm.Options{Model: currentModel, ChunkContext: chunkContext})
 		streamElapsed := time.Since(streamStart)
 		// Capture user-cancellation BEFORE we run our own cleanup cancel() —
 		// otherwise streamCtx.Err() below would always be non-nil and we'd

@@ -1,9 +1,9 @@
 package llm
 
 // SDK backend: talks directly to https://api.anthropic.com/v1/messages over
-// HTTP + Server-Sent Events. No third-party dependencies — the Anthropic Go
-// SDK is still in beta and its API shape shifts between releases, so we stay
-// on the stable REST surface instead.
+// HTTP + Server-Sent Events. Uses content-block arrays for system and
+// messages so the Anthropic prompt caching layer can cache the stable
+// system directives and the growing conversation prefix between turns.
 
 import (
 	"bufio"
@@ -24,34 +24,37 @@ const (
 	anthropicVersion  = "2023-06-01"
 )
 
+type cacheControl struct {
+	Type string `json:"type"`
+}
+
+type contentBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
 type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string         `json:"role"`
+	Content []contentBlock `json:"content"`
 }
 
 type anthropicRequest struct {
 	Model     string             `json:"model"`
 	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system"`
+	System    []contentBlock     `json:"system"`
 	Messages  []anthropicMessage `json:"messages"`
 	Stream    bool               `json:"stream"`
 }
 
-// sseEvent is the subset of each Server-Sent Event we care about — the
-// Anthropic stream reuses HTTP SSE format with `event:` and `data:` lines.
-// Two delta types matter: text_delta (the visible response) and
-// thinking_delta (the extended-thinking phase opus + sonnet-thinking
-// fire before emitting text). We only use thinking_delta to drive a
-// dim progress indicator — the reasoning text itself is never printed.
+// sseEvent is the subset of each Server-Sent Event we care about.
 type sseEvent struct {
-	Type string `json:"type"`
-	// For content_block_delta events, the delta we care about lives here.
+	Type  string `json:"type"`
 	Delta struct {
 		Type     string `json:"type"`
 		Text     string `json:"text"`
 		Thinking string `json:"thinking"`
 	} `json:"delta"`
-	// message_start carries usage info etc. — not parsed.
 	Index int `json:"index,omitempty"`
 }
 
@@ -70,18 +73,15 @@ func streamViaSDK(
 	model string,
 	renderer *markdown.Renderer,
 ) (string, error) {
+	systemBlocks := buildSystemBlocks(systemPrompt)
+	apiMessages := buildAPIMessages(messages)
+
 	reqBody := anthropicRequest{
 		Model:     model,
 		MaxTokens: maxTokens(),
-		System:    systemPrompt,
+		System:    systemBlocks,
 		Stream:    true,
-		Messages:  make([]anthropicMessage, 0, len(messages)),
-	}
-	for _, m := range messages {
-		reqBody.Messages = append(reqBody.Messages, anthropicMessage{
-			Role:    string(m.Role),
-			Content: m.Content,
-		})
+		Messages:  apiMessages,
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -164,4 +164,40 @@ func streamViaSDK(
 	}
 
 	return full.String(), nil
+}
+
+// buildSystemBlocks converts the system prompt into content blocks.
+// The full prompt is placed in a single block with cache_control so
+// Anthropic caches the entire system prefix. When the same system
+// prompt is sent again within the TTL window (e.g. ask retries,
+// chat turns with identical chunks), the cached version is reused
+// at 10% of the input token cost.
+func buildSystemBlocks(systemPrompt string) []contentBlock {
+	return []contentBlock{
+		{
+			Type:         "text",
+			Text:         systemPrompt,
+			CacheControl: &cacheControl{Type: "ephemeral"},
+		},
+	}
+}
+
+// buildAPIMessages converts internal messages to the Anthropic content-block
+// format and places a cache_control breakpoint on the second-to-last message
+// so the conversation prefix is cached between turns.
+func buildAPIMessages(messages []Message) []anthropicMessage {
+	out := make([]anthropicMessage, 0, len(messages))
+	for i, m := range messages {
+		block := contentBlock{Type: "text", Text: m.Content}
+		// Mark the second-to-last message so everything up to (and
+		// including) it is cached for the next turn.
+		if len(messages) > 2 && i == len(messages)-2 {
+			block.CacheControl = &cacheControl{Type: "ephemeral"}
+		}
+		out = append(out, anthropicMessage{
+			Role:    string(m.Role),
+			Content: []contentBlock{block},
+		})
+	}
+	return out
 }
