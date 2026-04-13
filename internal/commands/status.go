@@ -35,7 +35,7 @@ func Status(ctx context.Context) error {
 		return err
 	}
 	if res.exitCode != 0 {
-		fmt.Println(ui.Red.Render("qmd status failed: " + strings.TrimSpace(res.stderr)))
+		fmt.Println(ui.Red.Render("Status check failed: " + config.RewriteQmdOutput(strings.TrimSpace(res.stderr))))
 		return nil
 	}
 

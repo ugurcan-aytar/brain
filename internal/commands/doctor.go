@@ -42,10 +42,10 @@ func Doctor(ctx context.Context) error {
 	// that touches the index will fail.
 	if qmdPath, err := exec.LookPath(config.Default.QmdBinary); err == nil {
 		version := qmdVersion(ctx)
-		ok(fmt.Sprintf("qmd found at %s%s", qmdPath, version))
+		ok(fmt.Sprintf("search engine found at %s%s", qmdPath, version))
 	} else {
-		fail("qmd not found in PATH")
-		hint("Install with: npm install -g @tobilu/qmd")
+		fail("search engine (qmd) not found in PATH")
+		hint("Install: npm install -g @tobilu/qmd")
 		failures++
 	}
 
@@ -165,9 +165,8 @@ func checkQmdContext(ctx context.Context) {
 	stdout := strings.TrimSpace(res.stdout)
 	if stdout == "" || strings.Contains(stdout, "No context") || stdout == "[]" {
 		warn("no collection context set — search quality may be degraded")
-		hint("Add context to help qmd understand your collections:")
+		hint("Add context to help brain understand your collections:")
 		hint("  brain add <path> --context \"description of what these notes contain\"")
-		hint("  Or directly: qmd context add qmd://<collection>/ \"description\"")
 	} else {
 		ok("collection context configured")
 	}
@@ -178,35 +177,34 @@ func checkQmdPipeline(ctx context.Context) {
 	// to confirm basic search works.
 	res, err := runQmd(ctx, "search", "test", "-n", "1", "--json")
 	if err != nil || res.exitCode != 0 {
-		warn("qmd search probe failed — index may be empty or corrupted")
+		warn("search probe failed — index may be empty or corrupted")
 		hint("Try: brain index")
 		return
 	}
-	ok("qmd search (BM25) working")
+	ok("keyword search working")
 
-	// Now probe `qmd vsearch` — this exercises the vector pipeline including vec0.
+	// Now probe vector search — this exercises the vec0 SQLite extension.
 	vres, verr := runQmd(ctx, "vsearch", "test", "-n", "1", "--json")
 	if verr != nil {
-		warn("qmd vector search probe failed — vec0 module may be missing")
+		warn("vector search probe failed — search engine may need reinstalling")
 		hint("Try: npm install -g @tobilu/qmd && brain index")
 		return
 	}
 	if vres.exitCode != 0 {
 		stderr := strings.TrimSpace(vres.stderr)
 		if strings.Contains(stderr, "vec0") || strings.Contains(stderr, "no such module") {
-			warn("qmd vector search broken (vec0 module missing)")
-			hint("Vector search is disabled — only BM25 keyword match is working.")
+			warn("vector search broken — only keyword match is working")
 			hint("This significantly degrades retrieval quality.")
 			hint("Fix: npm install -g @tobilu/qmd && brain index")
 		} else {
-			warn("qmd vector search returned an error")
+			warn("vector search returned an error")
 			if stderr != "" {
 				hint(stderr)
 			}
 		}
 		return
 	}
-	ok("qmd vector search (vec0) working")
+	ok("vector search working")
 }
 
 func ok(msg string)   { fmt.Println(ui.Green.Render("  ✓ ") + msg) }

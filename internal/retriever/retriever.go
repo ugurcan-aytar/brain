@@ -106,7 +106,7 @@ var (
 func warnFallback() {
 	if !fallbackWarned {
 		fallbackWarned = true
-		fmt.Fprintf(os.Stderr, "\033[2m  ⚠ qmd query failed — falling back to keyword search (run brain doctor for details)\033[0m\n")
+		fmt.Fprintf(os.Stderr, "\033[2m  ⚠ hybrid search failed — falling back to keyword search (run brain doctor for details)\033[0m\n")
 	}
 }
 

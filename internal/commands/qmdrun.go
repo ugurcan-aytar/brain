@@ -53,8 +53,9 @@ var errQmdMissing = errors.New("qmd is not installed or not found in PATH")
 // command entry points call this from their err path, so the install hint
 // only lives in one place.
 func printQmdMissing() {
-	fmt.Println(ui.Red.Render("Error: qmd is not installed or not found in PATH."))
-	fmt.Println(ui.Dim.Render("Install it with: npm install -g @tobilu/qmd"))
+	fmt.Println(ui.Red.Render("Error: search engine is not installed or not found in PATH."))
+	fmt.Println(ui.Dim.Render("Install: npm install -g @tobilu/qmd"))
+	fmt.Println(ui.Dim.Render("Then run: brain doctor"))
 }
 
 // isMissing checks whether an error is our sentinel for "qmd not in PATH".
