@@ -138,6 +138,7 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		return nil
 	}
 
+	ui.VerifyCitations(answer, chunks)
 	ui.PrintSources(chunks, "")
 	ui.PrintLogo()
 

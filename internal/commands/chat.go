@@ -404,6 +404,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		historyMessages = append(historyMessages, llm.Message{Role: llm.RoleAssistant, Content: response})
 		fmt.Println()
 		fmt.Println(ui.Dim.Render(fmt.Sprintf("  responded in %s", formatElapsed(streamElapsed))))
+		ui.VerifyCitations(response, chunks)
 		ui.PrintSources(chunks, "")
 		if _, err := history.Save(history.Entry{
 			Question:    input,
