@@ -19,7 +19,7 @@ type Settings struct {
 var Default = Settings{
 	Model:                "claude-sonnet-4-6",
 	MaxTokens:            16384,
-	TopK:                 7,
+	TopK:                 20,
 	MinScore:             0.2,
 	MinChunksToCallLLM:   1,
 	MaxConversationTurns: 10,
