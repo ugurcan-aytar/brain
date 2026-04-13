@@ -101,6 +101,10 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **`brain history`** — every Q&A is saved as a timestamped markdown file with model/collections/elapsed metadata; `brain history browse` opens an interactive TUI picker with `/` filter on questions, `f` for full-text search across answers, `enter` to view, `d` to delete
 - **`/challenge`** — re-score an answer against a different set of sources to check it
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
+- **Multi-query retrieval** — before hitting the index, Haiku generates 2-3 reformulations of your question (synonyms, related terms, different angles) and all variants are queried in parallel; results are merged with [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) so chunks that appear across multiple reformulations get boosted — this catches notes that use different vocabulary than your question
+- **Adaptive scoring** — instead of a hard relevance cutoff that silently drops chunks, brain uses 40% of the top chunk's score as a dynamic floor; on difficult queries where all scores are low, weak-but-best results survive instead of returning "nothing found"
+- **Citation verification** — after every answer, `[filename.md]` citations are checked against the retrieved sources; fabricated filenames get a `⚠` warning
+- **Prompt caching** — on the Anthropic backend, system directives and conversation history are structured for prompt caching, reducing latency by up to 85% and cost by up to 90% on multi-turn chat sessions
 - **Collection picker** — multi-select UI to scope a question to specific note folders
 - **Model switching** — swap between `sonnet` (default), `opus`, and `haiku` mid-session
 - **Ctrl+C everywhere** — cancel retrieval or streaming at any time without leaving your terminal in a broken state
@@ -345,9 +349,9 @@ brain ask "…"
 cmd/brain/            # Cobra entry point + subcommand wiring
 internal/
 ├── config/           # defaults, qmd env scrubber, output rewriter
-├── retriever/        # qmd subprocess wrapper, JSON parsing, dedup, grounding gate
-├── prompt/           # query classifier + adaptive system prompt builder
-├── llm/              # Anthropic REST/SSE backend + claude CLI fallback
+├── retriever/        # qmd subprocess wrapper, multi-query fan-out, RRF merge, adaptive filtering, grounding gate
+├── prompt/           # query classifier + adaptive system prompt builder (static/dynamic split for caching)
+├── llm/              # Anthropic REST/SSE (prompt caching), OpenAI-compat, claude CLI fallback, Haiku query expansion
 ├── markdown/         # streaming terminal markdown renderer
 ├── history/          # timestamped Q&A archive
 ├── picker/           # interactive collection multi-select (charmbracelet/huh)
@@ -358,13 +362,16 @@ internal/
 ### Retrieval → grounding → synthesis
 
 ```
-question ──▶ qmd query (subprocess)
-         ──▶ JSON parse + dedupe across collections
+question ──▶ Haiku expands into 2-3 query variants
+         ──▶ all variants hit qmd in parallel (per collection)
+         ──▶ Reciprocal Rank Fusion merges results
+         ──▶ adaptive min-score filter (40% of top score)
          ──▶ grounding gate (skip LLM if no chunks)
          ──▶ classify query → pick mode directive
-         ──▶ build adaptive system prompt
-         ──▶ stream response into markdown renderer
-         ──▶ print sources + save history
+         ──▶ build adaptive system prompt (static/dynamic split)
+         ──▶ stream response (prompt-cached on Anthropic)
+         ──▶ verify citations against retrieved set
+         ──▶ print sources + save history with metadata
 ```
 
 ### Why `qmd` as a subprocess?
@@ -373,7 +380,7 @@ question ──▶ qmd query (subprocess)
 
 ### Why direct HTTP instead of the Anthropic SDK?
 
-The official Go SDK is still in beta and its public API shape changes across minor releases. The REST + SSE surface is stable and documented, so we talk to `api.anthropic.com` directly with `net/http`. ~150 lines, no dependencies, no version churn.
+The official Go SDK is still in beta and its public API shape changes across minor releases. The REST + SSE surface is stable and documented, so we talk to `api.anthropic.com` directly with `net/http`. ~200 lines, no dependencies, no version churn. The direct HTTP approach also lets us use content-block arrays with `cache_control` breakpoints for prompt caching — something the SDK doesn't always expose cleanly.
 
 ## Development
 
