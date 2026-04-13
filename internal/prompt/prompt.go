@@ -155,6 +155,14 @@ const deepExtraction = `DEEP EXTRACTION RULES:
 - Treat the absence of information as information: note what the knowledge base is silent about.
 - Prefer specificity: if a note contains a concrete example, metric, or case study, surface it rather than abstracting it away.`
 
+const crossSourceTension = `CROSS-SOURCE TENSION (mandatory):
+Before synthesizing, identify at least one pair of sources that disagree,
+contradict, or approach the topic from fundamentally different angles.
+Explain the disagreement and why it matters for the user's question.
+If every source genuinely agrees, say so explicitly — but look hard first.
+Do NOT skip this step. Shallow agreement across many sources often hides
+real tensions that matter.`
+
 const synthesisRules = `SYNTHESIS RULES:
 - You ARE allowed to reason, connect, and apply the grounded knowledge to the user's specific situation.
 - You CAN draw parallels, map frameworks to new contexts, and combine insights from multiple notes.
@@ -217,10 +225,13 @@ func StaticDirectives() string {
 
 %s
 
+%s
+
 %s`,
 		groundingRules,
 		sourceProtocol,
 		deepExtraction,
+		crossSourceTension,
 		synthesisRules,
 		allModes.String(),
 		hardBoundaries,
@@ -279,6 +290,8 @@ func BuildSystemPrompt(chunks []retriever.Chunk, query string, modeOverride Quer
 
 %s
 
+%s
+
 Context from personal knowledge base:
 ---
 %s
@@ -287,6 +300,7 @@ Context from personal knowledge base:
 		groundingRules,
 		sourceProtocol,
 		deepExtraction,
+		crossSourceTension,
 		synthesisRules,
 		modeDirectives[mode],
 		hardBoundaries,

@@ -322,6 +322,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			chunks     []retriever.Chunk
 			retrErr    error
 		)
+		searchStart := time.Now()
 		searchAction := func() {
 			chunks, retrErr = retriever.RetrieveMulti(streamCtx, queries, retriever.Options{
 				Collections: activeCollections,
@@ -332,6 +333,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			<-done
 			return err
 		}
+		searchElapsed := time.Since(searchStart)
 
 		if streamCtx.Err() != nil {
 			cancel()
@@ -366,7 +368,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			activeModeLabel = modeOverride
 			modeSuffix = ""
 		}
-		fmt.Println(ui.Dim.Render(fmt.Sprintf("  [%s%s]", activeModeLabel, modeSuffix)))
+		fmt.Println(ui.Dim.Render(fmt.Sprintf("  [%s%s]  searched in %s", activeModeLabel, modeSuffix, formatElapsed(searchElapsed))))
 		fmt.Println()
 
 		var systemPrompt, chunkContext string

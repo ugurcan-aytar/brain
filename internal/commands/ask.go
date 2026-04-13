@@ -80,6 +80,7 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		chunks     []retriever.Chunk
 		retrieveErr error
 	)
+	searchStart := time.Now()
 	retrieveAction := func() {
 		chunks, retrieveErr = retriever.RetrieveMulti(ctx, queries, retriever.Options{
 			Collections: collections,
@@ -88,6 +89,7 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	if err := spinner.New().Title("Searching your notes…").Action(retrieveAction).Run(); err != nil {
 		return err
 	}
+	searchElapsed := time.Since(searchStart)
 
 	if ctx.Err() != nil {
 		fmt.Println(ui.Dim.Render("\n  Cancelled."))
@@ -116,7 +118,7 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		active = modeOverride
 		modeSuffix = ""
 	}
-	fmt.Println(ui.Dim.Render(fmt.Sprintf("  [%s%s]", active, modeSuffix)))
+	fmt.Println(ui.Dim.Render(fmt.Sprintf("  [%s%s]  searched in %s", active, modeSuffix, formatElapsed(searchElapsed))))
 	fmt.Println()
 
 	var systemPrompt, chunkContext string
