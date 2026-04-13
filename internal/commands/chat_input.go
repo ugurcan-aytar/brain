@@ -53,6 +53,16 @@ const (
 	chatInputEOF         // Ctrl+D on an empty line
 )
 
+var inputBorder = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("8")).
+	Padding(0, 1)
+
+var inputBorderActive = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("6")).
+	Padding(0, 1)
+
 type chatInputModel struct {
 	input    textinput.Model
 	commands []slashCommand
@@ -60,17 +70,18 @@ type chatInputModel struct {
 	cursor   int
 	result   chatInputResult
 	value    string
+	width    int
 }
 
 func newChatInputModel(commands []slashCommand) chatInputModel {
 	ti := textinput.New()
 	ti.Prompt = ui.Cyan.Render("❯ ")
+	ti.Placeholder = "Ask a question about your notes, or type / for commands"
+	ti.PlaceholderStyle = lipgloss.NewStyle().Faint(true)
 	ti.Focus()
-	// Leave room for long questions. A fixed width is fine — bubbletea's
-	// inline mode will just wrap if the terminal is narrower.
 	ti.CharLimit = 0
-	ti.Width = 100
-	return chatInputModel{input: ti, commands: commands}
+	ti.Width = 80
+	return chatInputModel{input: ti, commands: commands, width: 80}
 }
 
 func (m chatInputModel) Init() tea.Cmd {
@@ -78,6 +89,15 @@ func (m chatInputModel) Init() tea.Cmd {
 }
 
 func (m chatInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = ws.Width
+		innerW := ws.Width - 4 // border + padding
+		if innerW < 20 {
+			innerW = 20
+		}
+		m.input.Width = innerW
+	}
+
 	var cmd tea.Cmd
 	if km, ok := msg.(tea.KeyMsg); ok {
 		switch km.Type {
@@ -139,23 +159,32 @@ func (m chatInputModel) dropdownVisible() bool {
 }
 
 func (m chatInputModel) View() string {
-	// On submission, return an empty view so bubbletea leaves nothing
-	// in the scrollback — the chat loop re-prints the question as a
-	// normal Println, which is immune to subsequent spinner rendering.
 	if m.result == chatInputSubmitted {
 		return ""
 	}
+
+	borderW := m.width - 2
+	if borderW < 20 {
+		borderW = 20
+	}
+
+	border := inputBorder.Width(borderW)
+	if m.input.Value() != "" {
+		border = inputBorderActive.Width(borderW)
+	}
+
 	var b strings.Builder
-	b.WriteString(m.input.View())
+	b.WriteString(border.Render(m.input.View()))
+
 	if !m.dropdownVisible() {
 		return b.String()
 	}
 	b.WriteString("\n")
-	cursor := ui.Cyan.Render("▸")
+	cursorGlyph := ui.Cyan.Render("▸")
 	hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	for i, c := range m.filtered {
 		if i == m.cursor {
-			b.WriteString("  " + cursor + " " + hl.Render(c.name) + "  " + ui.Dim.Render(c.help))
+			b.WriteString("  " + cursorGlyph + " " + hl.Render(c.name) + "  " + ui.Dim.Render(c.help))
 		} else {
 			b.WriteString("    " + ui.Dim.Render(c.name+"  "+c.help))
 		}
