@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -53,9 +54,60 @@ var errQmdMissing = errors.New("qmd is not installed or not found in PATH")
 // command entry points call this from their err path, so the install hint
 // only lives in one place.
 func printQmdMissing() {
+	if tryInstallQmd() {
+		return
+	}
 	fmt.Println(ui.Red.Render("Error: search engine is not installed or not found in PATH."))
 	fmt.Println(ui.Dim.Render("Install: npm install -g @tobilu/qmd"))
 	fmt.Println(ui.Dim.Render("Then run: brain doctor"))
+}
+
+// tryInstallQmd offers to install qmd automatically when npm is available.
+// Returns true if the install succeeded (caller should retry the operation).
+func tryInstallQmd() bool {
+	// Need npm on PATH.
+	npmPath, err := exec.LookPath("npm")
+	if err != nil {
+		return false
+	}
+	_ = npmPath
+
+	// Only prompt on a TTY — don't auto-install in CI or pipes.
+	if !isTerminal() {
+		return false
+	}
+
+	fmt.Println(ui.Yellow.Render("  Search engine (qmd) is not installed."))
+	fmt.Print(ui.Dim.Render("  Install it now? [Y/n] "))
+
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "" && answer != "y" && answer != "yes" {
+		return false
+	}
+
+	fmt.Println(ui.Dim.Render("  Installing qmd…"))
+	cmd := exec.Command("npm", "install", "-g", "@tobilu/qmd")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Println(ui.Red.Render("  Install failed: " + err.Error()))
+		fmt.Println(ui.Dim.Render("  Try manually: npm install -g @tobilu/qmd"))
+		return false
+	}
+
+	fmt.Println(ui.Green.Render("  ✓ Search engine installed."))
+	fmt.Println()
+	return true
+}
+
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // isMissing checks whether an error is our sentinel for "qmd not in PATH".
