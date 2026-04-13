@@ -288,7 +288,7 @@ Defaults live in [`internal/config/config.go`](internal/config/config.go). The i
 | `Model` | `claude-sonnet-4-6` | Default Claude model |
 | `MaxTokens` | `16384` | Response length cap |
 | `TopK` | `20` | Chunks to retrieve per question |
-| `MinScore` | `0.2` | Minimum relevance to include a chunk |
+| `MinScore` | `0.05` | Minimum relevance floor (adaptive filter uses 40% of top score) |
 | `MinChunksToCallLLM` | `1` | Grounding gate threshold |
 | `MaxConversationTurns` | `10` | Chat history cap (user + assistant per turn) |
 | `DefaultMask` | `**/*.{txt,md}` | Files to index when adding a collection |

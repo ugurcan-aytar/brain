@@ -144,10 +144,15 @@ type collectionResult struct {
 }
 
 // Retrieve fans out across collections (if provided), merges results by docid
-// keeping the highest score per document, and returns them sorted descending.
+// keeping the highest score per document, applies adaptive minimum-score
+// filtering, and returns them sorted descending.
 func Retrieve(ctx context.Context, query string, opt Options) ([]Chunk, error) {
 	if len(opt.Collections) == 0 {
-		return runSingleQuery(ctx, query, opt)
+		chunks, err := runSingleQuery(ctx, query, opt)
+		if err != nil {
+			return nil, err
+		}
+		return adaptiveFilter(chunks), nil
 	}
 
 	results := make([]collectionResult, len(opt.Collections))
@@ -189,7 +194,31 @@ func Retrieve(ctx context.Context, query string, opt Options) ([]Chunk, error) {
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-	return out, nil
+	return adaptiveFilter(out), nil
+}
+
+// adaptiveFilter replaces the old hard MinScore cutoff. Instead of a fixed
+// 0.2 threshold that silently drops chunks on difficult queries, we use
+// 40% of the top score as the floor. When the top chunk scores 0.9 the
+// floor is 0.36 (junk is dropped). When the top chunk scores 0.3 the
+// floor is 0.12 (weak-but-best results survive).
+func adaptiveFilter(chunks []Chunk) []Chunk {
+	if len(chunks) == 0 {
+		return chunks
+	}
+	topScore := chunks[0].Score
+	floor := topScore * 0.4
+	hardFloor := 0.05 // absolute minimum — never surface pure noise
+	if floor < hardFloor {
+		floor = hardFloor
+	}
+	out := make([]Chunk, 0, len(chunks))
+	for _, c := range chunks {
+		if c.Score >= floor {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // RawSearch is like Retrieve but with topK=10 and no minimum-score filter.

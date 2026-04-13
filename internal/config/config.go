@@ -20,7 +20,7 @@ var Default = Settings{
 	Model:                "claude-sonnet-4-6",
 	MaxTokens:            16384,
 	TopK:                 20,
-	MinScore:             0.2,
+	MinScore:             0.05,
 	MinChunksToCallLLM:   1,
 	MaxConversationTurns: 10,
 	QmdBinary:            "qmd",
