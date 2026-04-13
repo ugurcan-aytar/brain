@@ -230,3 +230,72 @@ func TestClassifyEmptyStringDefaultsToAnalysis(t *testing.T) {
 		t.Errorf("Classify(\"\") = %q, want %q", got, Analysis)
 	}
 }
+
+func TestStaticDirectivesStableAcrossCalls(t *testing.T) {
+	a := StaticDirectives()
+	b := StaticDirectives()
+	if a != b {
+		t.Error("StaticDirectives should return the same string on every call")
+	}
+}
+
+func TestStaticDirectivesContainsAllModes(t *testing.T) {
+	sd := StaticDirectives()
+	for _, mode := range []string{"RECALL", "ANALYSIS", "DECISION", "SYNTHESIS"} {
+		if !strings.Contains(sd, "["+mode+"]") {
+			t.Errorf("StaticDirectives missing mode section [%s]", mode)
+		}
+	}
+	for _, block := range []string{"GROUNDING RULES", "SOURCE ANALYSIS PROTOCOL", "DEEP EXTRACTION", "SYNTHESIS RULES", "HARD BOUNDARIES"} {
+		if !strings.Contains(sd, block) {
+			t.Errorf("StaticDirectives missing %q", block)
+		}
+	}
+}
+
+func TestStaticDirectivesNoChunks(t *testing.T) {
+	sd := StaticDirectives()
+	if strings.Contains(sd, "Context from personal knowledge base:") {
+		t.Error("StaticDirectives should NOT contain chunks")
+	}
+}
+
+func TestContextBlockContainsMode(t *testing.T) {
+	chunks := makeChunks(2, 0.5)
+	cb := ContextBlock(chunks, "Why did this happen?", "")
+	if !strings.Contains(cb, "[Active mode: analysis]") {
+		t.Error("ContextBlock should contain auto-detected mode label")
+	}
+}
+
+func TestContextBlockOverrideMode(t *testing.T) {
+	chunks := makeChunks(2, 0.5)
+	cb := ContextBlock(chunks, "anything", Recall)
+	if !strings.Contains(cb, "[Active mode: recall]") {
+		t.Errorf("ContextBlock should use override mode, got:\n%s", cb[:200])
+	}
+}
+
+func TestContextBlockContainsChunks(t *testing.T) {
+	chunks := []retriever.Chunk{
+		{DisplayPath: "test/note.md", Score: 0.7, Snippet: "unique snippet content"},
+	}
+	cb := ContextBlock(chunks, "query", "")
+	if !strings.Contains(cb, "unique snippet content") {
+		t.Error("ContextBlock should embed chunk snippets")
+	}
+	if !strings.Contains(cb, "[test/note.md]") {
+		t.Error("ContextBlock should embed chunk display paths")
+	}
+}
+
+func TestBuildSystemPromptStillWorks(t *testing.T) {
+	chunks := makeChunks(2, 0.5)
+	combined := BuildSystemPrompt(chunks, "Why?", "")
+	if !strings.Contains(combined, "Context from personal knowledge base:") {
+		t.Error("BuildSystemPrompt should still contain chunks for non-caching backends")
+	}
+	if !strings.Contains(combined, "GROUNDING RULES") {
+		t.Error("BuildSystemPrompt should still contain directives")
+	}
+}
