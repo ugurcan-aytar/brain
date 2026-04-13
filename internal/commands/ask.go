@@ -22,6 +22,7 @@ type AskOptions struct {
 	Collection string // single collection shortcut; skips the picker
 	Model      string // alias or full model ID
 	Mode       string // one of prompt.ValidModes (auto|recall|…)
+	Deep       bool   // two-pass retrieval: LLM filters 20 chunks down to 8-10
 }
 
 // NewAskCmd wires the Ask handler into a Cobra command with its flags.
@@ -38,6 +39,7 @@ func NewAskCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Collection, "collection", "c", "", "Scope search to a specific collection")
 	cmd.Flags().StringVarP(&opts.Model, "model", "m", "sonnet", "Claude model (sonnet, opus, haiku)")
 	cmd.Flags().StringVarP(&opts.Mode, "mode", "M", "auto", "Thinking mode (auto, recall, analysis, decision, synthesis)")
+	cmd.Flags().BoolVar(&opts.Deep, "deep", false, "Two-pass retrieval: LLM filters chunks for deeper analysis")
 	return cmd
 }
 
@@ -104,6 +106,10 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	}
 	if !retriever.GroundingGate(chunks) {
 		return nil
+	}
+
+	if opts.Deep {
+		chunks = retriever.DeepFilter(ctx, chunks, question, llm.QuickComplete)
 	}
 
 	var modeOverride prompt.QueryType

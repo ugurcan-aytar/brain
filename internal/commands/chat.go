@@ -58,6 +58,7 @@ var slashCommands = []slashCommand{
 	{"/help", "Show this message"},
 	{"/mode", "Set thinking mode (auto, recall, analysis, decision, synthesis)"},
 	{"/model", "Switch Claude model"},
+	{"/deep", "Toggle two-pass deep retrieval (LLM filters chunks)"},
 	{"/collections", "Re-pick active collections"},
 	{"/sources", "Show sources from last answer"},
 	{"/challenge", "Cross-reference last Q&A against different sources"},
@@ -161,6 +162,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		historyMessages []llm.Message
 		lastChunks      []retriever.Chunk
 		lastCtrlC       time.Time
+		deepMode        bool
 	)
 
 	for {
@@ -286,6 +288,17 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			continue
 		}
 
+		if resolved == "/deep" {
+			deepMode = !deepMode
+			state := "off"
+			if deepMode {
+				state = "on"
+			}
+			fmt.Println(ui.Dim.Render("  Deep retrieval: " + state))
+			fmt.Println()
+			continue
+		}
+
 		if resolved == "/challenge" {
 			if err := runChallenge(ctx, &historyMessages, &lastChunks, currentModel); err != nil {
 				return err
@@ -356,6 +369,10 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			cancel()
 			<-done
 			continue
+		}
+
+		if deepMode {
+			chunks = retriever.DeepFilter(streamCtx, chunks, input, llm.QuickComplete)
 		}
 
 		lastChunks = chunks
