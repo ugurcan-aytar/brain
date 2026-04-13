@@ -33,10 +33,10 @@ func EnrichTopChunks(ctx context.Context, chunks []Chunk, topN int) []Chunk {
 	copy(out, chunks)
 
 	for i := 0; i < topN; i++ {
-		if out[i].DisplayPath == "" {
+		if out[i].File == "" {
 			continue
 		}
-		body := fetchFullBody(ctx, out[i].DisplayPath)
+		body := fetchFullBody(ctx, out[i].File)
 		if body != "" {
 			out[i].Snippet = body
 		}
@@ -46,14 +46,11 @@ func EnrichTopChunks(ctx context.Context, chunks []Chunk, topN int) []Chunk {
 
 // fetchFullBody calls `qmd get <path>` and returns the full document text.
 // Returns empty string on any error so callers keep the original snippet.
-func fetchFullBody(ctx context.Context, displayPath string) string {
-	// displayPath is like "qmd://Lenny/itamar-gilad.txt" or just "itamar-gilad.txt".
-	// qmd get expects the qmd:// form if it's a collection path.
-	path := displayPath
-	if !strings.HasPrefix(path, "qmd://") {
-		// Can't resolve without the full qmd path — skip.
+func fetchFullBody(ctx context.Context, filePath string) string {
+	if !strings.HasPrefix(filePath, "qmd://") {
 		return ""
 	}
+	path := filePath
 
 	cmd := exec.CommandContext(ctx, config.Default.QmdBinary, "get", path)
 	cmd.Env = config.QmdEnv()
@@ -65,8 +62,8 @@ func fetchFullBody(ctx context.Context, displayPath string) string {
 
 	body := string(stdout)
 	// Truncate very long documents to avoid blowing up the context window.
-	// 15K chars ≈ ~4K tokens — enough to capture detail without overwhelming.
-	const maxLen = 15000
+	// 30K chars ≈ ~8K tokens — enough to capture detail from long transcripts.
+	const maxLen = 30000
 	if len(body) > maxLen {
 		body = body[:maxLen] + "\n[… truncated — full document is longer]"
 	}

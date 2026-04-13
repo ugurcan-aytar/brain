@@ -101,10 +101,14 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **`brain history`** — every Q&A is saved as a timestamped markdown file with model/collections/elapsed metadata; `brain history browse` opens an interactive TUI picker with `/` filter on questions, `f` for full-text search across answers, `enter` to view, `d` to delete
 - **`/challenge`** — re-score an answer against a different set of sources to check it
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
-- **Multi-query retrieval** — before hitting the index, a lightweight LLM call generates 2-3 reformulations of your question (synonyms, related terms, different angles) and all variants are queried in parallel; results are merged with [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) so chunks that appear across multiple reformulations get boosted — works on all backends (Haiku on Anthropic, your configured model on OpenAI/Ollama/OpenRouter, graceful fallback when no key is set)
+- **Full document enrichment** — top results are re-fetched as complete documents so the LLM sees the full source, not just the highest-scoring chunk; long transcripts with detail buried past the intro are handled correctly
+- **`brain add --context "description"`** — tells the search engine what a collection is about, dramatically improving retrieval quality for domain-specific content
+- **`--deep` / `/deep`** — two-pass retrieval: an LLM call filters 20 chunks down to the 8-10 most relevant for deeper synthesis on complex questions
+- **Cross-source tension detection** — the system prompt forces the model to identify disagreements between sources before synthesizing, pushing beyond shallow summary
 - **Adaptive scoring** — instead of a hard relevance cutoff that silently drops chunks, brain uses 40% of the top chunk's score as a dynamic floor; on difficult queries where all scores are low, weak-but-best results survive instead of returning "nothing found"
 - **Citation verification** — after every answer, `[filename.md]` citations are checked against the retrieved sources; fabricated filenames get a `⚠` warning
-- **Prompt caching** — on the Anthropic backend, system directives and conversation history are structured for prompt caching, reducing latency by up to 85% and cost by up to 90% on multi-turn chat sessions
+- **Prompt caching** — on the Anthropic backend, system directives and conversation history are structured for prompt caching, reducing latency and cost on multi-turn chat sessions
+- **Automatic setup** — if the search engine isn't installed, brain offers to install it on first use; `brain doctor` checks pipeline health (keyword search, vector search, collection context) and prints actionable fix commands
 - **Collection picker** — multi-select UI to scope a question to specific note folders
 - **Model switching** — swap between `sonnet` (default), `opus`, and `haiku` mid-session
 - **Ctrl+C everywhere** — cancel retrieval or streaming at any time without leaving your terminal in a broken state
@@ -206,6 +210,7 @@ brain chat
 - `-c, --collection <name>` — scope to a single collection (skips the picker)
 - `-m, --model <model>` — `sonnet` (default), `opus`, `haiku`, or a full Anthropic model ID
 - `-M, --mode <mode>` — override the auto-detected thinking mode: `auto`, `recall`, `analysis`, `decision`, `synthesis`
+- `--deep` — two-pass retrieval: LLM filters chunks for deeper analysis on complex questions
 
 **Flags on `chat`:**
 
@@ -225,6 +230,7 @@ brain chat
 
 - `--name <name>` — override the default collection name (folder basename)
 - `--mask <glob>` — override the default file glob (`**/*.{txt,md}`)
+- `--context <description>` — describe what this collection contains (e.g. `"Podcast transcripts about product management"`); improves search quality significantly
 
 ### History
 
@@ -349,9 +355,9 @@ brain ask "…"
 cmd/brain/            # Cobra entry point + subcommand wiring
 internal/
 ├── config/           # defaults, qmd env scrubber, output rewriter
-├── retriever/        # qmd subprocess wrapper, multi-query fan-out, RRF merge, adaptive filtering, grounding gate
+├── retriever/        # qmd subprocess wrapper, adaptive filtering, full-doc enrichment, deep filter, grounding gate
 ├── prompt/           # query classifier + adaptive system prompt builder (static/dynamic split for caching)
-├── llm/              # Anthropic REST/SSE (prompt caching), OpenAI-compat, claude CLI fallback, Haiku query expansion
+├── llm/              # Anthropic REST/SSE (prompt caching), OpenAI-compat, claude CLI fallback
 ├── markdown/         # streaming terminal markdown renderer
 ├── history/          # timestamped Q&A archive
 ├── picker/           # interactive collection multi-select (charmbracelet/huh)
@@ -362,11 +368,11 @@ internal/
 ### Retrieval → grounding → synthesis
 
 ```
-question ──▶ Haiku expands into 2-3 query variants
-         ──▶ all variants hit qmd in parallel (per collection)
-         ──▶ Reciprocal Rank Fusion merges results
+question ──▶ qmd hybrid search (BM25 + vector + HyDE + rerank)
          ──▶ adaptive min-score filter (40% of top score)
          ──▶ grounding gate (skip LLM if no chunks)
+         ──▶ enrich top results with full documents (qmd get)
+         ──▶ [--deep] LLM filters to 8-10 most relevant chunks
          ──▶ classify query → pick mode directive
          ──▶ build adaptive system prompt (static/dynamic split)
          ──▶ stream response (prompt-cached on Anthropic)

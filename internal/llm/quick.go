@@ -148,30 +148,3 @@ func quickCompleteOpenAI(ctx context.Context, system, user, key string) (string,
 	return strings.TrimSpace(qr.Choices[0].Message.Content), nil
 }
 
-// ExpandQuery calls a lightweight LLM to generate 2-3 reformulations of
-// the user's question for multi-query retrieval. Returns the original
-// query plus the variants. Falls back to just the original on any error
-// or when no LLM backend is available.
-func ExpandQuery(ctx context.Context, query string) []string {
-	system := `You generate search query variants for a personal knowledge base.
-Given a user question, output 2-3 alternative phrasings that would help retrieve
-relevant notes. Each variant on its own line, no numbering, no explanations.
-Focus on synonyms, related terms, and different angles of the same question.`
-
-	result, err := QuickComplete(ctx, system, query)
-	if err != nil || result == "" {
-		return []string{query}
-	}
-
-	variants := []string{query}
-	for _, line := range strings.Split(result, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && line != query {
-			variants = append(variants, line)
-		}
-	}
-	if len(variants) > 4 {
-		variants = variants[:4]
-	}
-	return variants
-}

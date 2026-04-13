@@ -22,12 +22,14 @@ type Chunk struct {
 	Score       float64
 	Snippet     string
 	DocID       string
+	File        string // qmd:// path for fetching full document
 }
 
 // rawResult is the untyped shape of a qmd JSON entry — qmd uses a few
 // different field names across versions, so we normalize in parse().
 type rawResult struct {
 	DocID       string  `json:"docid"`
+	File        string  `json:"file"`
 	DisplayPath string  `json:"displayPath"`
 	Title       string  `json:"title"`
 	Score       float64 `json:"score"`
@@ -148,6 +150,7 @@ func runQmdSubcmd(ctx context.Context, subcmd, query string, opt Options, minSco
 			Score:       r.Score,
 			Snippet:     firstNonEmpty(r.Snippet, r.Content),
 			DocID:       r.DocID,
+			File:        r.File,
 		}
 		if c.Score >= minScore {
 			out = append(out, c)
