@@ -101,7 +101,7 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **`brain history`** — every Q&A is saved as a timestamped markdown file with model/collections/elapsed metadata; `brain history browse` opens an interactive TUI picker with `/` filter on questions, `f` for full-text search across answers, `enter` to view, `d` to delete
 - **`/challenge`** — re-score an answer against a different set of sources to check it
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
-- **Multi-query retrieval** — before hitting the index, Haiku generates 2-3 reformulations of your question (synonyms, related terms, different angles) and all variants are queried in parallel; results are merged with [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) so chunks that appear across multiple reformulations get boosted — this catches notes that use different vocabulary than your question
+- **Multi-query retrieval** — before hitting the index, a lightweight LLM call generates 2-3 reformulations of your question (synonyms, related terms, different angles) and all variants are queried in parallel; results are merged with [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) so chunks that appear across multiple reformulations get boosted — works on all backends (Haiku on Anthropic, your configured model on OpenAI/Ollama/OpenRouter, graceful fallback when no key is set)
 - **Adaptive scoring** — instead of a hard relevance cutoff that silently drops chunks, brain uses 40% of the top chunk's score as a dynamic floor; on difficult queries where all scores are low, weak-but-best results survive instead of returning "nothing found"
 - **Citation verification** — after every answer, `[filename.md]` citations are checked against the retrieved sources; fabricated filenames get a `⚠` warning
 - **Prompt caching** — on the Anthropic backend, system directives and conversation history are structured for prompt caching, reducing latency by up to 85% and cost by up to 90% on multi-turn chat sessions
@@ -341,7 +341,7 @@ export BRAIN_CLAUDE_BIN=opencode
 brain ask "…"
 ```
 
-> **Note:** brain's adaptive prompts and thinking-mode directives are tuned for Claude. Non-Claude models will work — the retrieval gate ("no chunks → no LLM call") is model-agnostic — but response quality, especially for `synthesis` and `decision` modes, varies. Run `brain doctor` to see which backend is active.
+> **Note:** brain's adaptive prompts and thinking-mode directives are tuned for Claude. Non-Claude models will work — the retrieval gate ("no chunks → no LLM call") is model-agnostic — but response quality, especially for `synthesis` and `decision` modes, varies. Multi-query expansion, citation verification, adaptive scoring, and TopK 20 work on **all** backends. Prompt caching is Anthropic-only (OpenAI auto-caches shared prefixes without explicit markup). Run `brain doctor` to see which backend is active.
 
 ## Architecture
 
