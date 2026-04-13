@@ -106,6 +106,10 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		return nil
 	}
 
+	// Enrich top results with full document bodies so the LLM sees complete
+	// source content, not just the winning chunk from qmd's per-doc dedup.
+	chunks = retriever.EnrichTopChunks(ctx, chunks, 3)
+
 	if opts.Deep {
 		chunks = retriever.DeepFilter(ctx, chunks, question, llm.QuickComplete)
 	}

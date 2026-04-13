@@ -369,6 +369,8 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			continue
 		}
 
+		chunks = retriever.EnrichTopChunks(streamCtx, chunks, 3)
+
 		if deepMode {
 			chunks = retriever.DeepFilter(streamCtx, chunks, input, llm.QuickComplete)
 		}

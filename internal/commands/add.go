@@ -14,8 +14,9 @@ import (
 
 // AddOptions controls how a collection is registered.
 type AddOptions struct {
-	Name string
-	Mask string
+	Name    string
+	Mask    string
+	Context string
 }
 
 // NewAddCmd wires the Add handler into a Cobra command with its flags.
@@ -31,6 +32,7 @@ func NewAddCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.Name, "name", "", "Collection name (default: folder basename)")
 	cmd.Flags().StringVar(&opts.Mask, "mask", "", "File glob mask (default: **/*.{txt,md})")
+	cmd.Flags().StringVar(&opts.Context, "context", "", "Description of what this collection contains (improves search quality)")
 	return cmd
 }
 
@@ -78,6 +80,19 @@ func Add(ctx context.Context, path string, opts AddOptions) error {
 
 	fmt.Println(ui.Green.Render(fmt.Sprintf("✓ Collection \"%s\" added from %s", name, path)))
 	fmt.Println(ui.Dim.Render("  Mask: " + mask))
+
+	// Set collection context if provided — this tells qmd's HyDE and
+	// reranker what the collection is about, dramatically improving
+	// search quality for domain-specific content.
+	if opts.Context != "" {
+		qmdPath := fmt.Sprintf("qmd://%s/", name)
+		cres, cerr := runQmd(ctx, "context", "add", qmdPath, opts.Context)
+		if cerr == nil && cres.exitCode == 0 {
+			fmt.Println(ui.Dim.Render("  Context: " + opts.Context))
+		}
+	} else {
+		fmt.Println(ui.Dim.Render("  Tip: add --context \"description\" to improve search quality"))
+	}
 	fmt.Println()
 
 	return Index(ctx)

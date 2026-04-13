@@ -114,6 +114,11 @@ func Doctor(ctx context.Context) error {
 		failures++
 	}
 
+	// Collection context: warn if no context is set on any collection.
+	if _, err := exec.LookPath(config.Default.QmdBinary); err == nil {
+		checkQmdContext(ctx)
+	}
+
 	// qmd pipeline health: run a tiny vector search to confirm vec0 + embeddings work.
 	// This catches the "vec0 module missing" crash that silently degrades brain
 	// to BM25-only without telling the user.
@@ -150,6 +155,22 @@ func qmdVersion(ctx context.Context) string {
 		return ""
 	}
 	return " (" + v + ")"
+}
+
+func checkQmdContext(ctx context.Context) {
+	res, err := runQmd(ctx, "context", "list")
+	if err != nil || res.exitCode != 0 {
+		return
+	}
+	stdout := strings.TrimSpace(res.stdout)
+	if stdout == "" || strings.Contains(stdout, "No context") || stdout == "[]" {
+		warn("no collection context set — search quality may be degraded")
+		hint("Add context to help qmd understand your collections:")
+		hint("  brain add <path> --context \"description of what these notes contain\"")
+		hint("  Or directly: qmd context add qmd://<collection>/ \"description\"")
+	} else {
+		ok("collection context configured")
+	}
 }
 
 func checkQmdPipeline(ctx context.Context) {
