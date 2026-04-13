@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -65,42 +66,68 @@ func topKOr(n int) int {
 	return config.Default.TopK
 }
 
-func buildQmdArgs(query string, opt Options, minScore float64) []string {
-	args := []string{"query", query, "--json", "-n", fmt.Sprintf("%d", topKOr(opt.TopK)), "--min-score", fmt.Sprintf("%g", minScore)}
+func buildQmdArgs(subcmd, query string, opt Options, minScore float64) []string {
+	args := []string{subcmd, query, "--json", "-n", fmt.Sprintf("%d", topKOr(opt.TopK)), "--min-score", fmt.Sprintf("%g", minScore)}
 	if opt.Collection != "" {
 		args = append(args, "-c", opt.Collection)
 	}
 	return args
 }
 
-// runSingleQuery invokes qmd once and parses the JSON array out of stdout.
-// Returns an empty slice (no error) if qmd exits 130 (SIGINT) so that cancelled
-// requests don't surface as errors.
+// runSingleQuery invokes `qmd query` and parses the JSON array out of stdout.
+// If `qmd query` fails (e.g. vec0 crash), it falls back to `qmd search`
+// (BM25-only) and prints a one-time warning so the user knows retrieval
+// quality is degraded. Returns an empty slice on cancellation (SIGINT / ctx).
 func runSingleQuery(ctx context.Context, query string, opt Options) ([]Chunk, error) {
 	minScore := config.Default.MinScore
 	if opt.MinScore != nil {
 		minScore = *opt.MinScore
 	}
-	args := buildQmdArgs(query, opt, minScore)
+
+	chunks, err := runQmdSubcmd(ctx, "query", query, opt, minScore)
+	if err != nil {
+		if errors.Is(err, ErrQmdMissing) {
+			return nil, err
+		}
+		// qmd query failed (vec0 crash, etc.) — fall back to BM25-only search.
+		warnFallback()
+		chunks, err = runQmdSubcmd(ctx, "search", query, opt, minScore)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return chunks, nil
+}
+
+var (
+	fallbackWarned bool
+)
+
+func warnFallback() {
+	if !fallbackWarned {
+		fallbackWarned = true
+		fmt.Fprintf(os.Stderr, "\033[2m  ⚠ qmd query failed — falling back to keyword search (run brain doctor for details)\033[0m\n")
+	}
+}
+
+func runQmdSubcmd(ctx context.Context, subcmd, query string, opt Options, minScore float64) ([]Chunk, error) {
+	args := buildQmdArgs(subcmd, query, opt, minScore)
 
 	cmd := exec.CommandContext(ctx, config.Default.QmdBinary, args...)
 	cmd.Env = config.QmdEnv()
 
 	stdout, err := cmd.Output()
 	if err != nil {
-		// exec.Command returns an error wrapping exec.ExitError on non-zero exit.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			if exitErr.ExitCode() == 130 {
-				return nil, nil // cancelled — not an error
+				return nil, nil
 			}
-			return nil, fmt.Errorf("qmd exited with code %d: %s", exitErr.ExitCode(), strings.TrimSpace(string(exitErr.Stderr)))
+			return nil, fmt.Errorf("qmd %s exited with code %d: %s", subcmd, exitErr.ExitCode(), strings.TrimSpace(string(exitErr.Stderr)))
 		}
-		// Context cancelled → return empty cleanly.
 		if ctx.Err() != nil {
 			return nil, nil
 		}
-		// Missing binary
 		var notFound *exec.Error
 		if errors.As(err, &notFound) {
 			return nil, ErrQmdMissing

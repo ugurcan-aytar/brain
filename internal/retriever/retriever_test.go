@@ -104,7 +104,7 @@ func TestTopKOr(t *testing.T) {
 
 func TestBuildQmdArgs(t *testing.T) {
 	opt := Options{TopK: 3, Collection: "notes"}
-	args := buildQmdArgs("my query", opt, 0.5)
+	args := buildQmdArgs("query", "my query", opt, 0.5)
 
 	// Expected shape: ["query", "my query", "--json", "-n", "3", "--min-score", "0.5", "-c", "notes"]
 	wantPrefix := []string{"query", "my query", "--json", "-n", "3", "--min-score"}
@@ -129,7 +129,7 @@ func TestBuildQmdArgs(t *testing.T) {
 }
 
 func TestBuildQmdArgsWithoutCollection(t *testing.T) {
-	args := buildQmdArgs("q", Options{TopK: 10}, 0.2)
+	args := buildQmdArgs("query", "q", Options{TopK: 10}, 0.2)
 	for _, a := range args {
 		if a == "-c" {
 			t.Errorf("unexpected -c flag with no collection: %v", args)

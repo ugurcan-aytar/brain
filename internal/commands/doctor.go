@@ -114,6 +114,13 @@ func Doctor(ctx context.Context) error {
 		failures++
 	}
 
+	// qmd pipeline health: run a tiny vector search to confirm vec0 + embeddings work.
+	// This catches the "vec0 module missing" crash that silently degrades brain
+	// to BM25-only without telling the user.
+	if _, err := exec.LookPath(config.Default.QmdBinary); err == nil {
+		checkQmdPipeline(ctx)
+	}
+
 	// History directory is best-effort — warn if the override points somewhere
 	// we can't write, but don't count it as a failure.
 	if dir := os.Getenv("BRAIN_HISTORY_DIR"); dir != "" {
@@ -143,6 +150,42 @@ func qmdVersion(ctx context.Context) string {
 		return ""
 	}
 	return " (" + v + ")"
+}
+
+func checkQmdPipeline(ctx context.Context) {
+	// Quick probe: run `qmd search "test" -n 1` (BM25 only, no vec0 needed)
+	// to confirm basic search works.
+	res, err := runQmd(ctx, "search", "test", "-n", "1", "--json")
+	if err != nil || res.exitCode != 0 {
+		warn("qmd search probe failed — index may be empty or corrupted")
+		hint("Try: brain index")
+		return
+	}
+	ok("qmd search (BM25) working")
+
+	// Now probe `qmd vsearch` — this exercises the vector pipeline including vec0.
+	vres, verr := runQmd(ctx, "vsearch", "test", "-n", "1", "--json")
+	if verr != nil {
+		warn("qmd vector search probe failed — vec0 module may be missing")
+		hint("Try: npm install -g @tobilu/qmd && brain index")
+		return
+	}
+	if vres.exitCode != 0 {
+		stderr := strings.TrimSpace(vres.stderr)
+		if strings.Contains(stderr, "vec0") || strings.Contains(stderr, "no such module") {
+			warn("qmd vector search broken (vec0 module missing)")
+			hint("Vector search is disabled — only BM25 keyword match is working.")
+			hint("This significantly degrades retrieval quality.")
+			hint("Fix: npm install -g @tobilu/qmd && brain index")
+		} else {
+			warn("qmd vector search returned an error")
+			if stderr != "" {
+				hint(stderr)
+			}
+		}
+		return
+	}
+	ok("qmd vector search (vec0) working")
 }
 
 func ok(msg string)   { fmt.Println(ui.Green.Render("  ✓ ") + msg) }

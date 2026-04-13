@@ -329,15 +329,13 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		streamCtx, cancel := context.WithCancel(ctx)
 		done := watchSIGINT(streamCtx, cancel)
 
-		queries := llm.ExpandQuery(streamCtx, input)
-
 		var (
 			chunks     []retriever.Chunk
 			retrErr    error
 		)
 		searchStart := time.Now()
 		searchAction := func() {
-			chunks, retrErr = retriever.RetrieveMulti(streamCtx, queries, retriever.Options{
+			chunks, retrErr = retriever.Retrieve(streamCtx, input, retriever.Options{
 				Collections: activeCollections,
 			})
 		}

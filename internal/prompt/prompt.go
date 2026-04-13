@@ -174,7 +174,10 @@ const hardBoundaries = `HARD BOUNDARIES:
 - Zero relevant knowledge → say nothing was found. Do NOT synthesize from nothing.
 - Partially relevant → synthesize from what exists and flag the gaps explicitly.
 - No filler, no hedging, no preamble.
-- Respond in the same language the user writes in (Turkish or English).`
+- Respond in the same language the user writes in (Turkish or English).
+- You CANNOT search the web, fetch URLs, or access any external source. You have NO tools.
+- Do NOT offer to do things you cannot do. Never say "I can search", "I can fetch", or "ask me to look up".
+- If the notes are insufficient, say what is missing and suggest the user add the source to their collection with 'brain add <path>'.`
 
 var modeDirectives = map[QueryType]string{
 	Recall: `STRUCTURE YOUR RESPONSE:
