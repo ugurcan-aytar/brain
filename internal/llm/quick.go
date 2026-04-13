@@ -46,7 +46,7 @@ func quickCompleteAnthropic(ctx context.Context, system, user, key string) (stri
 		System    string             `json:"system"`
 		Messages  []anthropicMessage `json:"messages"`
 	}{
-		Model:     "claude-haiku-4-5",
+		Model:     "claude-sonnet-4-6",
 		MaxTokens: 300,
 		System:    system,
 		Messages: []anthropicMessage{
