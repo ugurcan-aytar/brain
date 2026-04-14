@@ -4,6 +4,8 @@
 
 ### Conversational knowledge base over your local notes
 
+[![CI](https://github.com/ugurcan-aytar/brain/actions/workflows/ci.yml/badge.svg)](https://github.com/ugurcan-aytar/brain/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/ugurcan-aytar/brain/branch/main/graph/badge.svg)](https://codecov.io/gh/ugurcan-aytar/brain)
 [![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#requirements)
@@ -184,16 +186,24 @@ After any install path, run `brain doctor` to check that qmd + a Claude backend 
 
 ## Quick start
 
+Kick the tires against the included sample notes:
+
 ```sh
-# 1. Register a folder of notes (auto-runs `brain index` afterward)
-brain add ~/Documents/my-notes
+# 1. Register the example notes folder (auto-runs `brain index` afterward)
+brain add ./examples --name examples
 
 # 2. Ask a question
-brain ask "What did I write about activation energy?"
+brain ask "What did the team decide about authentication?"
 
 # 3. Or start an interactive conversation
 brain chat
 ```
+
+Point `brain add` at your own folder when you're ready — `~/Documents/my-notes`,
+`~/Obsidian/vault`, whatever. The [`examples/`](examples/) directory ships
+three small markdown files (meeting notes, a technical doc, a journal
+entry) chosen to show off retrieval, cross-source connections, and
+thinking-mode responses on a realistic tiny corpus.
 
 ## Commands
 
