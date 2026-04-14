@@ -122,30 +122,36 @@ func qmdHomeDir() string {
 	return ""
 }
 
-// qmdCollectionNames best-effort lists collections from qmd's text output.
-// Returns an empty slice (no error) when qmd produces nothing parseable —
-// the caller handles that gracefully.
+// qmdCollectionNames best-effort lists collections from qmd's text
+// output. qmd prints one unindented line per collection ("Lenny",
+// "Reforge", …) followed by indented metadata rows ("  Pattern: …",
+// "  Files: 123", "  Updated: …"). We keep only the unindented top
+// tokens. Returns an empty slice (no error) when qmd produces nothing
+// parseable — the caller handles that gracefully.
 func qmdCollectionNames(ctx context.Context, bin string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, bin, "collection", "list")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	// qmd's list format is "<name>  (qmd://...)" per line. We grab the
-	// leading token up to the first whitespace, keeping anything that
-	// looks like an identifier.
 	var names []string
 	for _, line := range splitLines(string(out)) {
-		line = trimLeadingSpace(line)
-		if line == "" {
+		// Skip blank lines and indented metadata rows. Collection names
+		// live flush-left in qmd's output.
+		if line == "" || line[0] == ' ' || line[0] == '\t' {
 			continue
 		}
 		end := firstWhitespace(line)
 		if end <= 0 {
-			continue
+			end = len(line)
 		}
 		token := line[:end]
-		// Skip obvious headers / banners qmd might print.
+		// Defensive filters: skip banner words and anything that looks
+		// like a metadata key ("Name:", "Context:", …) just in case the
+		// indentation heuristic misses something.
+		if token == "" || token[len(token)-1] == ':' {
+			continue
+		}
 		if token == "Collections" || token == "No" || token == "Registered" {
 			continue
 		}
@@ -167,15 +173,6 @@ func splitLines(s string) []string {
 		out = append(out, s[start:])
 	}
 	return out
-}
-
-func trimLeadingSpace(s string) string {
-	for i := 0; i < len(s); i++ {
-		if s[i] != ' ' && s[i] != '\t' {
-			return s[i:]
-		}
-	}
-	return ""
 }
 
 func firstWhitespace(s string) int {
