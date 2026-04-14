@@ -1,53 +1,231 @@
-# Runs goreleaser on every version tag push (v1.0.0, v1.2.3-beta, …).
-# Triggered manually via `git tag vX.Y.Z && git push origin vX.Y.Z` so
-# releases stay deliberate — no accidental version bumps on main pushes.
-#
-# The workflow builds every target in .goreleaser.yaml, creates a
-# GitHub release with the prebuilt binaries + .deb/.rpm/.apk packages,
-# and pushes a Homebrew cask to the ugurcan-aytar/homebrew-brain tap.
-#
-# Required repo secret:
-#   HOMEBREW_TAP_GITHUB_TOKEN — a fine-grained or classic PAT with
-#   "contents: write" on ugurcan-aytar/homebrew-brain. The default
-#   GITHUB_TOKEN can't push to a different repo, so the tap needs its
-#   own token.
-name: release
+name: Release
 
+# Triggered by tag push OR by manual re-run against an existing tag.
 on:
   push:
     tags:
-      - "v*"
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to re-release (e.g. v0.3.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+env:
+  # Where the version metadata gets stamped via -ldflags.
+  PKG: github.com/ugurcan-aytar/brain/internal/version
+
 jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
+  # ---------- per-platform native builds (CGo can't cross-compile OS) ----------
+  build:
+    name: build (${{ matrix.label }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux_amd64
+            goos: linux
+            goarch: amd64
+          - os: macos-latest        # arm64 (M-series)
+            label: darwin_arm64
+            goos: darwin
+            goarch: arm64
+          # darwin_amd64 (Intel Mac) and linux_arm64 deferred: macos-13
+          # runner isn't available on this account, and linux_arm64 needs
+          # cross-compile tooling (zigcc / qemu). Reintroduce when the
+          # Windows matrix work lands (see ROADMAP B1.11).
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # goreleaser needs the full history to generate the changelog
-          # between the previous tag and this one.
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "stable"
+          go-version-file: go.mod
           cache: true
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Build brain
         env:
-          # Auto-populated by Actions, lets goreleaser push the main
-          # release + assets back to this repo.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # User-provided PAT — lets goreleaser push the generated Cask
-          # formula to the separate homebrew-brain tap repo.
+          GOOS:        ${{ matrix.goos }}
+          GOARCH:      ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          set -euxo pipefail
+          OUTDIR="brain_${{ steps.ver.outputs.version }}_${{ matrix.label }}"
+          mkdir -p "$OUTDIR"
+          go build -tags sqlite_fts5 \
+            -ldflags "-s -w \
+              -X $PKG.Current=${{ steps.ver.outputs.tag }}" \
+            -o "$OUTDIR/brain" ./cmd/brain
+          cp README.md LICENSE "$OUTDIR/"
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md "$OUTDIR/" || true
+          tar -czf "${OUTDIR}.tar.gz" "$OUTDIR"
+          ls -la "${OUTDIR}.tar.gz"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: brain_*_${{ matrix.label }}.tar.gz
+          if-no-files-found: error
+
+  # ---------- assemble release + write homebrew formula -----------------------
+  release:
+    name: publish release + brew tap
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Pull all platform tarballs
+        uses: actions/download-artifact@v4
+        with:
+          path: artefacts/
+
+      - name: Stage release files + checksums
+        run: |
+          set -euxo pipefail
+          mkdir -p release
+          find artefacts/ -name "*.tar.gz" -exec cp -v {} release/ \;
+          cd release
+          shasum -a 256 *.tar.gz > checksums.txt
+          cat checksums.txt
+          ls -la
+
+      - name: Create / update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          NOTES="$(git for-each-ref --format='%(contents)' refs/tags/$TAG | head -200)"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Existing release found. Refresh assets AND make sure it's
+            # published — `gh release view` matches drafts too, and a
+            # previously-orphaned draft (from a tag delete + repush) would
+            # otherwise stay hidden from the public releases page.
+            gh release upload "$TAG" release/* --clobber
+            gh release edit   "$TAG" --draft=false --notes "$NOTES" --title "brain $TAG"
+          else
+            gh release create "$TAG" release/* \
+              --title "brain $TAG" \
+              --notes "$NOTES"
+          fi
+
+      - name: Push Homebrew formula
+        env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          if [ -z "${HOMEBREW_TAP_GITHUB_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_GITHUB_TOKEN secret not set — skipping brew tap push."
+            exit 0
+          fi
+          TAG="${{ steps.ver.outputs.tag }}"
+          VER="${{ steps.ver.outputs.version }}"
+
+          SHA_LIN_AMD=$(grep "linux_amd64"  release/checksums.txt | awk '{print $1}')
+          SHA_DAR_ARM=$(grep "darwin_arm64" release/checksums.txt | awk '{print $1}')
+          BASE_URL="https://github.com/ugurcan-aytar/brain/releases/download/${TAG}"
+
+          cat > /tmp/brain.rb <<EOF
+          # Auto-generated by brain release workflow. Do not edit by hand.
+          class Brain < Formula
+            desc "Conversational knowledge base over your local notes"
+            homepage "https://github.com/ugurcan-aytar/brain"
+            version "${VER}"
+            license "MIT"
+
+            on_macos do
+              # darwin_amd64 (Intel Mac) build is not yet shipped — the
+              # macos-13 runner isn't available on the release workflow's
+              # account. M-series users are covered.
+              on_arm do
+                url "${BASE_URL}/brain_${VER}_darwin_arm64.tar.gz"
+                sha256 "${SHA_DAR_ARM}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${BASE_URL}/brain_${VER}_linux_amd64.tar.gz"
+                sha256 "${SHA_LIN_AMD}"
+              end
+            end
+
+            def install
+              bin.install "brain"
+            end
+
+            def caveats
+              <<~EOS
+                brain ships without the local GGUF embedding backend
+                (~146 MB model). To enable vector / hybrid search:
+                  * rebuild from source with -tags 'sqlite_fts5 embed_llama'
+                    (requires libbinding.a — see github.com/ugurcan-aytar/recall),
+                  * or set RECALL_EMBED_PROVIDER=openai|voyage and an API key.
+
+                BM25 full-text search via 'brain search' works out of the box.
+
+                At least one LLM backend is required — ANTHROPIC_API_KEY,
+                OPENAI_API_KEY, or the 'claude' CLI signed in. Run
+                'brain doctor' to verify.
+              EOS
+            end
+
+            test do
+              system "#{bin}/brain", "--version"
+            end
+          end
+          EOF
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/ugurcan-aytar/homebrew-brain.git" /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          cp /tmp/brain.rb /tmp/tap/Formula/brain.rb
+
+          # brain v0.2.x was published as a Cask (goreleaser-generated).
+          # v0.3.0 migrates to a plain Formula because our binary is a
+          # standard Go build, not a macOS .app. Remove the stale cask
+          # so `brew install ugurcan-aytar/brain/brain` resolves to the
+          # Formula instead of both entries fighting.
+          rm -f /tmp/tap/Casks/brain.rb
+
+          cd /tmp/tap
+          git config user.name  "brain release bot"
+          git config user.email "noreply@github.com"
+          git add -A Formula/brain.rb Casks/brain.rb 2>/dev/null || git add -A Formula/brain.rb
+          if git diff --cached --quiet; then
+            echo "tap formula unchanged; nothing to push"
+          else
+            git commit -m "brain ${VER}"
+            git push origin main
+          fi

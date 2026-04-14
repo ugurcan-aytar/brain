@@ -1,7 +1,10 @@
 #!/usr/bin/env sh
-# brain installer — fetches the latest prebuilt binary from GitHub Releases,
-# installs it into a writable prefix, and offers to install the `qmd` retrieval
-# engine if it's missing. Runs `brain doctor` at the end to verify everything.
+# brain installer — fetches the latest prebuilt binary from GitHub Releases
+# and installs it into a writable prefix. Runs `brain doctor` at the end so
+# the user can see whether their LLM backend is wired up.
+#
+# Retrieval is handled in-process now (by the embedded recall library), so
+# there's no npm / Node.js step anymore.
 #
 # Usage:
 #   curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh
@@ -10,7 +13,6 @@
 #   BRAIN_VERSION   Pin a specific release tag (default: latest).
 #   BRAIN_PREFIX    Install prefix (default: /usr/local, falls back to
 #                   $HOME/.local if /usr/local isn't writable and sudo is absent).
-#   BRAIN_NO_QMD    Set to 1 to skip the qmd install prompt.
 
 set -eu
 
@@ -170,23 +172,6 @@ case ":$PATH:" in
     dim "    Add this to your shell rc: export PATH=\"$bindir:\$PATH\""
     ;;
 esac
-
-# --- qmd (retrieval engine) --------------------------------------------------
-
-if [ "${BRAIN_NO_QMD:-0}" != "1" ]; then
-  if command -v qmd >/dev/null 2>&1; then
-    green "  qmd already installed"
-  elif command -v npm >/dev/null 2>&1; then
-    bold "Installing qmd via npm..."
-    if npm install -g @tobilu/qmd; then
-      green "  qmd installed"
-    else
-      yellow "  qmd install failed — run 'npm install -g @tobilu/qmd' manually"
-    fi
-  else
-    yellow "  npm not found — install Node.js, then run: npm install -g @tobilu/qmd"
-  fi
-fi
 
 # --- final verification ------------------------------------------------------
 
