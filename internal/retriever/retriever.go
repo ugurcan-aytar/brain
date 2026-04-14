@@ -1,3 +1,9 @@
+// Package retriever wraps the qmd subprocess, fans retrieval across
+// collections, normalises qmd's version-drifting JSON shape, applies
+// adaptive min-score filtering, and decides whether the LLM is allowed
+// to run at all (the grounding gate). Callers hand Retrieve a query +
+// Options and get back scored, filtered chunks; RawSearch is the
+// no-filter variant used by `brain search`.
 package retriever
 
 import (
@@ -54,6 +60,10 @@ func extractJSON(raw string) string {
 // ErrQmdMissing is returned when the qmd binary is not in PATH.
 var ErrQmdMissing = errors.New("qmd is not installed or not found in PATH")
 
+// Options configures a retrieval call. Collection scopes a single
+// collection; Collections fans out in parallel across multiple collections
+// and merges by docid. TopK defaults to config.Default.TopK when zero;
+// MinScore overrides the default adaptive floor when non-nil.
 type Options struct {
 	Collection  string
 	Collections []string

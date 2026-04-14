@@ -1,3 +1,10 @@
+// Package prompt classifies user queries into response-shape buckets
+// (recall / analysis / decision / synthesis) and assembles the
+// adaptive system prompt that grounds each answer in retrieved chunks.
+// The split between StaticDirectives (model + mode invariants) and
+// ContextBlock (per-query chunks) is designed for Anthropic prompt
+// caching: the static half stays identical across a chat session so
+// the provider can cache it.
 package prompt
 
 import (
@@ -23,6 +30,9 @@ const (
 // or the `/mode` slash command, plus "auto" for classifier-detected.
 var ValidModes = []string{"auto", "recall", "analysis", "decision", "synthesis"}
 
+// IsValidMode reports whether mode is one of ValidModes. Used by the
+// `-M` flag and `/mode` slash command to reject typos before classifier
+// dispatch.
 func IsValidMode(mode string) bool {
 	for _, m := range ValidModes {
 		if m == mode {
