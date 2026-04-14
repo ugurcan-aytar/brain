@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
 [![Interactive TUI](https://img.shields.io/badge/interactive-TUI-8a2be2?logo=gnubash&logoColor=white)](#chat-mode)
 [![Optimized for Claude](https://img.shields.io/badge/optimized%20for-Claude-d97757?logo=anthropic&logoColor=white)](https://www.anthropic.com)
-[![Built with qmd](https://img.shields.io/badge/retrieval-qmd-8A2BE2)](https://github.com/tobilu/qmd)
+[![Built with recall](https://img.shields.io/badge/retrieval-recall-8A2BE2)](https://github.com/ugurcan-aytar/recall)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 </div>
@@ -119,7 +119,6 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 ## Requirements
 
 - **macOS or Linux** — the `install.sh` script supports both. Windows isn't supported today; open an issue if you need it and we'll scope the work.
-- **[qmd](https://github.com/tobilu/qmd)** — the local embeddings + retrieval engine that powers the search layer. The installer picks this up automatically if `npm` is available; otherwise run `npm install -g @tobilu/qmd` yourself.
 - **At least one LLM backend.** brain picks the first one it finds, in this order:
   1. `ANTHROPIC_API_KEY` — native Claude API, the fastest and cheapest path (recommended).
   2. `OPENAI_API_KEY` — any OpenAI-compatible endpoint. Works out of the box with OpenAI, and via `OPENAI_BASE_URL` also with Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together, Fireworks, etc. See [Configuration](#configuration) for examples.
@@ -134,28 +133,7 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 brew install ugurcan-aytar/brain/brain
 ```
 
-No `sudo` needed — Homebrew manages its own prefix. Works on macOS and on Linux via [Linuxbrew](https://docs.brew.sh/Homebrew-on-Linux). Every release auto-publishes a cask to the [homebrew-brain tap](https://github.com/ugurcan-aytar/homebrew-brain) via `goreleaser`.
-
-### Debian / Ubuntu
-
-```sh
-# Download the latest .deb from the releases page, then:
-sudo apt install ./brain_*_amd64.deb
-```
-
-Grab the matching `.deb` for your arch (`amd64` or `arm64`) from [Releases](https://github.com/ugurcan-aytar/brain/releases). The package installs `brain` to `/usr/local/bin`.
-
-### Fedora / RHEL
-
-```sh
-sudo dnf install ./brain_*_x86_64.rpm
-```
-
-### Alpine
-
-```sh
-sudo apk add --allow-untrusted brain_*_x86_64.apk
-```
+No `sudo` needed — Homebrew manages its own prefix. Works on macOS (arm64) and on Linux (amd64) via [Linuxbrew](https://docs.brew.sh/Homebrew-on-Linux). Every release auto-publishes a formula to the [homebrew-brain tap](https://github.com/ugurcan-aytar/homebrew-brain).
 
 ### One-liner (any POSIX shell)
 
@@ -163,9 +141,9 @@ sudo apk add --allow-untrusted brain_*_x86_64.apk
 curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh
 ```
 
-The script downloads the right prebuilt binary for your OS/arch, verifies its SHA-256 against `checksums.txt`, drops it into `/usr/local/bin` (or `~/.local/bin` as a fallback), offers to `npm install -g @tobilu/qmd` if qmd is missing, and runs `brain doctor` at the end to confirm everything works.
+The script downloads the right prebuilt binary for your OS/arch, verifies its SHA-256 against `checksums.txt`, drops it into `/usr/local/bin` (or `~/.local/bin` as a fallback), and runs `brain doctor` at the end to confirm your LLM backend is wired up. Retrieval is handled in-process by the embedded [recall](https://github.com/ugurcan-aytar/recall) library — no Node.js, no npm, no second binary.
 
-Environment overrides: `BRAIN_VERSION=v1.2.3` to pin a release, `BRAIN_PREFIX=$HOME/.local` to change the install prefix, `BRAIN_NO_QMD=1` to skip the qmd step.
+Environment overrides: `BRAIN_VERSION=v1.2.3` to pin a release, `BRAIN_PREFIX=$HOME/.local` to change the install prefix.
 
 ### From source
 
@@ -182,7 +160,7 @@ sudo mv brain /usr/local/bin/
 go install github.com/ugurcan-aytar/brain/cmd/brain@latest
 ```
 
-After any install path, run `brain doctor` to check that qmd + a Claude backend are both wired up.
+After any install path, run `brain doctor` to check that the index is reachable and a Claude (or other) backend is wired up.
 
 ## Quick start
 
@@ -265,7 +243,7 @@ Every answer is archived as a timestamped markdown file (default `~/.brain/histo
 |---|---|
 | `brain index` | Re-scan files and regenerate embeddings |
 | `brain status` | Show index health and brain config |
-| `brain doctor` | Verify qmd + LLM backend are installed and configured |
+| `brain doctor` | Verify recall index + embedder + LLM backend are wired up |
 
 ## Chat mode
 
@@ -364,8 +342,9 @@ brain ask "…"
 ```
 cmd/brain/            # Cobra entry point + subcommand wiring
 internal/
-├── config/           # defaults, qmd env scrubber, output rewriter
-├── retriever/        # qmd subprocess wrapper, adaptive filtering, full-doc enrichment, deep filter, grounding gate
+├── config/           # runtime defaults (model, TopK, min-score, mask)
+├── engine/           # recall.Engine + embedder lifecycle wrapper
+├── retriever/        # adaptive filter, grounding gate, full-doc enrichment, deep filter
 ├── prompt/           # query classifier + adaptive system prompt builder (static/dynamic split for caching)
 ├── llm/              # Anthropic REST/SSE (prompt caching), OpenAI-compat, claude CLI fallback
 ├── markdown/         # streaming terminal markdown renderer
@@ -375,13 +354,19 @@ internal/
 └── commands/         # one file per CLI subcommand
 ```
 
+Retrieval is powered by [recall](https://github.com/ugurcan-aytar/recall),
+brain's sibling search engine. brain imports it as a Go library
+(`pkg/recall`) — there's no subprocess, no separate binary, no second
+install step. recall in turn was inspired by [qmd](https://github.com/tobi/qmd)
+by Tobi Lütke, which brain used to shell out to in earlier versions.
+
 ### Retrieval → grounding → synthesis
 
 ```
-question ──▶ qmd hybrid search (BM25 + vector + HyDE + rerank)
+question ──▶ recall hybrid search (BM25 + vector + RRF fusion)
          ──▶ adaptive min-score filter (40% of top score)
          ──▶ grounding gate (skip LLM if no chunks)
-         ──▶ enrich top results with full documents (qmd get)
+         ──▶ enrich top results with full documents (recall.Engine.Get)
          ──▶ [--deep] LLM filters to 8-10 most relevant chunks
          ──▶ classify query → pick mode directive
          ──▶ build adaptive system prompt (static/dynamic split)
@@ -390,9 +375,21 @@ question ──▶ qmd hybrid search (BM25 + vector + HyDE + rerank)
          ──▶ print sources + save history with metadata
 ```
 
-### Why `qmd` as a subprocess?
+### Why import `recall` instead of subprocess?
 
-`qmd` already has a battle-tested embeddings pipeline and a stable on-disk format in `~/.qmd`. Rewriting it in Go would break compatibility with anyone already using it, and give no measurable win. Shelling out is fast enough (single-digit ms overhead) and keeps the dependency surface small.
+Earlier brain versions (v0.2.x) shelled out to [qmd](https://github.com/tobi/qmd)
+— a Node.js retrieval engine — for every search. That worked but had
+three friction points: users had to install Node + npm on top of brain,
+every query paid single-digit-ms subprocess overhead, and the JSON
+contract between the two tools was a separate surface to keep in sync.
+
+[recall](https://github.com/ugurcan-aytar/recall) is a Go port of the
+same core ideas (BM25 via SQLite FTS5, vector via sqlite-vec, RRF
+fusion) purpose-built to be imported as a library. brain now links it
+directly: one binary, no runtime dependency on Node, zero subprocess
+cost, typed return values. For BM25 and API-embedded hybrid search
+that's all you need. The local GGUF embedder stays an opt-in build tag
+(`embed_llama`) for users who want fully offline vector search.
 
 ### Why direct HTTP instead of the Anthropic SDK?
 
