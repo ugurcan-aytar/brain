@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/muesli/termenv v0.16.0
 	github.com/spf13/cobra v1.10.2
-	github.com/ugurcan-aytar/recall v0.1.1
+	github.com/ugurcan-aytar/recall v0.1.3
 	golang.org/x/term v0.42.0
 )
 
