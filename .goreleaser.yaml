@@ -123,6 +123,21 @@ changelog:
       - "^chore:"
       - "Merge pull request"
       - "Merge branch"
+  # Group conventional-commit subjects into the release body so users
+  # reading the GitHub release page see features / fixes / refactors
+  # under separate headings instead of one flat list.
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix'
+      order: 1
+    - title: Refactoring
+      regexp: '^refactor'
+      order: 2
+    - title: Other
+      order: 999
 
 release:
   github:
