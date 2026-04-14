@@ -8,7 +8,7 @@
 [![codecov](https://codecov.io/gh/ugurcan-aytar/brain/branch/main/graph/badge.svg)](https://codecov.io/gh/ugurcan-aytar/brain)
 [![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#requirements)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#requirements)
 [![Interactive TUI](https://img.shields.io/badge/interactive-TUI-8a2be2?logo=gnubash&logoColor=white)](#chat-mode)
 [![Optimized for Claude](https://img.shields.io/badge/optimized%20for-Claude-d97757?logo=anthropic&logoColor=white)](https://www.anthropic.com)
 [![Built with qmd](https://img.shields.io/badge/retrieval-qmd-8A2BE2)](https://github.com/tobilu/qmd)
@@ -118,7 +118,7 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 
 ## Requirements
 
-- **macOS, Linux, or Windows** — the `install.sh` script supports macOS and Linux; Windows users can grab the `.zip` directly from [Releases](https://github.com/ugurcan-aytar/brain/releases).
+- **macOS or Linux** — the `install.sh` script supports both. Windows isn't supported today; open an issue if you need it and we'll scope the work.
 - **[qmd](https://github.com/tobilu/qmd)** — the local embeddings + retrieval engine that powers the search layer. The installer picks this up automatically if `npm` is available; otherwise run `npm install -g @tobilu/qmd` yourself.
 - **At least one LLM backend.** brain picks the first one it finds, in this order:
   1. `ANTHROPIC_API_KEY` — native Claude API, the fastest and cheapest path (recommended).

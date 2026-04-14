@@ -53,7 +53,7 @@ case "$os_raw" in
   Darwin)  GOOS=Darwin ;;
   Linux)   GOOS=Linux ;;
   MINGW*|MSYS*|CYGWIN*)
-    die "Windows detected — please download the .zip from https://github.com/$REPO/releases and extract brain.exe manually."
+    die "Windows isn't supported at the moment. Open an issue at https://github.com/$REPO/issues if you'd like it — we'll scope the work."
     ;;
   *) die "unsupported OS: $os_raw" ;;
 esac
