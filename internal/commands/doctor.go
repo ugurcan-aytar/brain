@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/recall/pkg/recall"
+
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
@@ -26,31 +28,62 @@ func NewDoctorCmd() *cobra.Command {
 	}
 }
 
-// Doctor checks that every external dependency brain relies on is in place:
-// the qmd retrieval engine, plus at least one LLM backend from the three
-// brain supports (Anthropic API, OpenAI-compatible, or the Claude CLI).
-// Prints a human-readable report and exits non-zero if anything required is
-// missing so CI and install scripts can gate on it.
+// Doctor prints a health report: recall index state (DB reachable,
+// collection + embedding counts, model available), at least one LLM
+// backend configured, and any BRAIN_HISTORY_DIR override. Exits
+// non-zero when something required is missing so install scripts / CI
+// can gate on it.
 func Doctor(ctx context.Context) error {
+	_ = ctx
+
 	fmt.Println(ui.Bold.Render("brain doctor"))
 	fmt.Println(ui.Dim.Render(fmt.Sprintf("  %s/%s, Go runtime %s", runtime.GOOS, runtime.GOARCH, runtime.Version())))
 	fmt.Println()
 
 	var failures int
 
-	// qmd is required. Without it, retrieval cannot run and every command path
-	// that touches the index will fail.
-	if qmdPath, err := exec.LookPath(config.Default.QmdBinary); err == nil {
-		version := qmdVersion(ctx)
-		ok(fmt.Sprintf("search engine found at %s%s", qmdPath, version))
-	} else {
-		fail("search engine (qmd) not found in PATH")
-		hint("Install: npm install -g @tobilu/qmd")
+	// ── recall index ──────────────────────────────────────────────────
+	eng, engErr := engine.Open()
+	if engErr != nil {
+		fail("recall index not reachable")
+		hint(engErr.Error())
+		hint("Try: brain add <path> to create the index, or check RECALL_DB_PATH.")
 		failures++
+	} else {
+		defer eng.Close()
+		cols, err := eng.Recall().ListCollections()
+		if err != nil {
+			fail("recall index open but unreadable")
+			hint(err.Error())
+			failures++
+		} else {
+			ok(fmt.Sprintf("recall index reachable (%d collection(s))", len(cols)))
+			if len(cols) == 0 {
+				hint("Add your first collection: brain add <path>")
+			}
+		}
+
+		// Embedder health — no failure here, only info. Brain works on
+		// BM25 alone; a missing embedder just means hybrid degrades.
+		emb, embErr := eng.Embedder()
+		switch {
+		case embErr != nil:
+			warn("embedder configuration error: " + embErr.Error())
+			hint("Hybrid / vector search disabled until resolved.")
+		case emb == nil:
+			if recall.LocalEmbedderAvailable() {
+				warn("local GGUF backend compiled in, but model not available")
+				hint("Run: recall models download     (or rebuild brain with embed_llama and the patched gollama)")
+			} else {
+				warn("hybrid search uses keyword (BM25) only on this build")
+				hint("Set RECALL_EMBED_PROVIDER=openai|voyage for vector search, or build from source with -tags embed_llama.")
+			}
+		default:
+			ok(fmt.Sprintf("embedder: %s (%d dims)", emb.ModelName(), emb.Dimensions()))
+		}
 	}
 
-	// LLM backends: report each slot independently, then show which one is
-	// actually active based on brain's priority order.
+	// ── LLM backends ──────────────────────────────────────────────────
 	active := llm.Select()
 	reportBackend := func(b llm.Backend, msg string) {
 		if b == active {
@@ -97,14 +130,9 @@ func Doctor(ctx context.Context) error {
 		hint("  export OPENAI_API_KEY=sk-...")
 		fmt.Println()
 		hint("  # Option 2b: Ollama (local, free, offline-capable)")
-		hint("  # Install Ollama first: https://ollama.com")
 		hint("  export OPENAI_API_KEY=ollama")
 		hint("  export OPENAI_BASE_URL=http://localhost:11434/v1")
 		hint("  export OPENAI_MODEL=llama3.1")
-		fmt.Println()
-		hint("  # Option 2c: OpenRouter (one key, every model)")
-		hint("  export OPENAI_API_KEY=sk-or-...")
-		hint("  export OPENAI_BASE_URL=https://openrouter.ai/api/v1")
 		fmt.Println()
 		hint("  # Option 3: Claude Code CLI (uses your Claude subscription)")
 		hint("  # Install: https://claude.ai/download")
@@ -114,20 +142,7 @@ func Doctor(ctx context.Context) error {
 		failures++
 	}
 
-	// Collection context: warn if no context is set on any collection.
-	if _, err := exec.LookPath(config.Default.QmdBinary); err == nil {
-		checkQmdContext(ctx)
-	}
-
-	// qmd pipeline health: run a tiny vector search to confirm vec0 + embeddings work.
-	// This catches the "vec0 module missing" crash that silently degrades brain
-	// to BM25-only without telling the user.
-	if _, err := exec.LookPath(config.Default.QmdBinary); err == nil {
-		checkQmdPipeline(ctx)
-	}
-
-	// History directory is best-effort — warn if the override points somewhere
-	// we can't write, but don't count it as a failure.
+	// ── History directory (best-effort) ───────────────────────────────
 	if dir := os.Getenv("BRAIN_HISTORY_DIR"); dir != "" {
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			warn(fmt.Sprintf("BRAIN_HISTORY_DIR=%s is not a writable directory", dir))
@@ -143,68 +158,6 @@ func Doctor(ctx context.Context) error {
 	}
 	fmt.Println(ui.Green.Render("All checks passed. You're ready to run `brain add <path>`."))
 	return nil
-}
-
-func qmdVersion(ctx context.Context) string {
-	res, err := runQmd(ctx, "--version")
-	if err != nil || res.exitCode != 0 {
-		return ""
-	}
-	v := strings.TrimSpace(res.stdout)
-	if v == "" {
-		return ""
-	}
-	return " (" + v + ")"
-}
-
-func checkQmdContext(ctx context.Context) {
-	res, err := runQmd(ctx, "context", "list")
-	if err != nil || res.exitCode != 0 {
-		return
-	}
-	stdout := strings.TrimSpace(res.stdout)
-	if stdout == "" || strings.Contains(stdout, "No context") || stdout == "[]" {
-		warn("no collection context set — search quality may be degraded")
-		hint("Add context to help brain understand your collections:")
-		hint("  brain add <path> --context \"description of what these notes contain\"")
-	} else {
-		ok("collection context configured")
-	}
-}
-
-func checkQmdPipeline(ctx context.Context) {
-	// Quick probe: run `qmd search "test" -n 1` (BM25 only, no vec0 needed)
-	// to confirm basic search works.
-	res, err := runQmd(ctx, "search", "test", "-n", "1", "--json")
-	if err != nil || res.exitCode != 0 {
-		warn("search probe failed — index may be empty or corrupted")
-		hint("Try: brain index")
-		return
-	}
-	ok("keyword search working")
-
-	// Now probe vector search — this exercises the vec0 SQLite extension.
-	vres, verr := runQmd(ctx, "vsearch", "test", "-n", "1", "--json")
-	if verr != nil {
-		warn("vector search probe failed — search engine may need reinstalling")
-		hint("Try: npm install -g @tobilu/qmd && brain index")
-		return
-	}
-	if vres.exitCode != 0 {
-		stderr := strings.TrimSpace(vres.stderr)
-		if strings.Contains(stderr, "vec0") || strings.Contains(stderr, "no such module") {
-			warn("vector search broken — only keyword match is working")
-			hint("This significantly degrades retrieval quality.")
-			hint("Fix: npm install -g @tobilu/qmd && brain index")
-		} else {
-			warn("vector search returned an error")
-			if stderr != "" {
-				hint(stderr)
-			}
-		}
-		return
-	}
-	ok("vector search working")
 }
 
 func ok(msg string)   { fmt.Println(ui.Green.Render("  ✓ ") + msg) }

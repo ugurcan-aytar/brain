@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/history"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/picker"
@@ -19,7 +20,7 @@ import (
 
 // AskOptions are the flags that ride alongside `brain ask`.
 type AskOptions struct {
-	Collection string // single collection shortcut; skips the picker
+	Collection string // single-collection shortcut; skips the picker
 	Model      string // alias or full model ID
 	Mode       string // one of prompt.ValidModes (auto|recall|…)
 	Deep       bool   // two-pass retrieval: LLM filters 20 chunks down to 8-10
@@ -51,14 +52,19 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	defer stopSignal()
 
 	// Fail fast before the picker takes over the TTY — nothing else brain
-	// does is useful without a working backend, and we don't want to make
-	// the user click through collections just to hit an error.
+	// does is useful without a working backend.
 	if llm.Select() == llm.BackendNone {
 		printNoBackend()
 		return nil
 	}
 
-	collections, err := resolveCollections(ctx, opts.Collection)
+	eng, err := engine.Open()
+	if err != nil {
+		return err
+	}
+	defer eng.Close()
+
+	collections, err := resolveCollections(ctx, eng, opts.Collection)
 	if err != nil {
 		if errors.Is(err, picker.ErrCancelled) {
 			fmt.Println()
@@ -77,12 +83,12 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	}
 
 	var (
-		chunks     []retriever.Chunk
+		chunks      []retriever.Chunk
 		retrieveErr error
 	)
 	searchStart := time.Now()
 	retrieveAction := func() {
-		chunks, retrieveErr = retriever.Retrieve(ctx, question, retriever.Options{
+		chunks, retrieveErr = retriever.Retrieve(ctx, eng, question, retriever.Options{
 			Collections: collections,
 		})
 	}
@@ -96,19 +102,15 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		return nil
 	}
 	if retrieveErr != nil {
-		if errors.Is(retrieveErr, retriever.ErrQmdMissing) {
-			printQmdMissing()
-			return nil
-		}
 		return retrieveErr
 	}
 	if !retriever.GroundingGate(chunks) {
 		return nil
 	}
 
-	// Enrich top results with full document bodies so the LLM sees complete
-	// source content, not just the winning chunk from qmd's per-doc dedup.
-	chunks = retriever.EnrichTopChunks(ctx, chunks, 3)
+	// Enrich top results with full document bodies so the LLM sees
+	// complete source content, not just the winning chunk.
+	chunks = retriever.EnrichTopChunks(ctx, eng, chunks, 3)
 
 	if opts.Deep {
 		chunks = retriever.DeepFilter(ctx, chunks, question, llm.QuickComplete)
@@ -170,12 +172,30 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	return nil
 }
 
-// resolveCollections returns either a single-collection slice (when the user
-// passed --collection), or the user's picker selection. A nil slice with nil
-// error means "all collections".
-func resolveCollections(ctx context.Context, flag string) ([]string, error) {
+// resolveCollections returns either a single-collection slice (when the
+// user passed --collection), or the user's picker selection. A nil
+// slice with nil error means "all collections".
+func resolveCollections(ctx context.Context, eng *engine.Engine, flag string) ([]string, error) {
 	if flag != "" {
 		return []string{flag}, nil
 	}
-	return picker.Pick(ctx, picker.PickOptions{})
+	names, err := collectionNames(eng)
+	if err != nil {
+		return nil, err
+	}
+	return picker.Pick(ctx, names, picker.PickOptions{})
+}
+
+// collectionNames is a small helper so ask/chat don't duplicate the
+// "fetch names for picker" logic.
+func collectionNames(eng *engine.Engine) ([]string, error) {
+	cols, err := eng.Recall().ListCollections()
+	if err != nil {
+		return nil, fmt.Errorf("list collections: %w", err)
+	}
+	names := make([]string, 0, len(cols))
+	for _, c := range cols {
+		names = append(names, c.Name)
+	}
+	return names, nil
 }

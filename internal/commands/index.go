@@ -2,12 +2,14 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/recall/pkg/recall"
+
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -23,59 +25,77 @@ func NewIndexCmd() *cobra.Command {
 	}
 }
 
-// Index runs `qmd update` followed by `qmd embed`, showing a spinner for
-// each step. Re-running is safe — qmd handles dedupe on its side.
+// Index re-scans every registered collection and re-embeds new/changed
+// chunks. Safe to re-run: recall skips unchanged files by content hash.
 func Index(ctx context.Context) error {
+	eng, err := engine.Open()
+	if err != nil {
+		return err
+	}
+	defer eng.Close()
+	return indexWithEngine(ctx, eng)
+}
+
+// indexWithEngine is shared with `brain add` so we don't open a second
+// engine when add→index runs back-to-back.
+func indexWithEngine(ctx context.Context, eng *engine.Engine) error {
+	_ = ctx
 	fmt.Println(ui.Bold.Render("Indexing your knowledge base…"))
 	fmt.Println()
 
-	if ok, err := runStep(ctx, "Updating file index", []string{"update"}); err != nil {
+	// Step 1: scan files + update document rows.
+	var (
+		idxRes *recall.IndexResult
+		idxErr error
+	)
+	action := func() { idxRes, idxErr = eng.Recall().Index() }
+	if err := spinner.New().Title("Scanning files…").Action(action).Run(); err != nil {
 		return err
-	} else if !ok {
+	}
+	if idxErr != nil {
+		fmt.Println(ui.Red.Render("Scan failed: " + idxErr.Error()))
+		return nil
+	}
+	fmt.Println(ui.Green.Render("✓ Scan complete"))
+	for name, stats := range idxRes.PerCollection {
+		fmt.Println(ui.Dim.Render(fmt.Sprintf("  %s: +%d -%d ~%d =%d",
+			name, stats.Indexed, stats.Removed, stats.Updated, stats.Unchanged)))
+	}
+
+	// Step 2: embed anything that's missing a vector. Graceful no-op
+	// when the local GGUF backend isn't compiled in AND no API provider
+	// is configured — BM25 still works.
+	emb, embErr := eng.Embedder()
+	if embErr != nil {
+		fmt.Println(ui.Yellow.Render("! Embedder configuration error: " + embErr.Error()))
+		fmt.Println(ui.Dim.Render("  Indexing completed; vector search is disabled until resolved."))
+		return nil
+	}
+	if emb == nil {
+		fmt.Println(ui.Dim.Render("  Local GGUF backend not available; skipping embedding step."))
+		fmt.Println(ui.Dim.Render("  Set RECALL_EMBED_PROVIDER=openai|voyage for hybrid search, or rebuild with -tags embed_llama."))
 		return nil
 	}
 
-	if ok, err := runStep(ctx, "Generating embeddings", []string{"embed"}); err != nil {
+	var (
+		embRes *recall.EmbedResult
+		embErr2 error
+	)
+	embAction := func() { embRes, embErr2 = eng.Recall().Embed(emb, false) }
+	if err := spinner.New().Title("Generating embeddings…").Action(embAction).Run(); err != nil {
 		return err
-	} else if !ok {
+	}
+	if embErr2 != nil {
+		if errors.Is(embErr2, recall.ErrLocalEmbedderNotCompiled) {
+			fmt.Println(ui.Dim.Render("  Local GGUF backend not compiled in; skipping embedding."))
+			return nil
+		}
+		fmt.Println(ui.Red.Render("Embedding failed: " + embErr2.Error()))
 		return nil
 	}
+	fmt.Println(ui.Green.Render(fmt.Sprintf("✓ Embedded %d chunk(s)", embRes.Embedded)))
 
 	fmt.Println()
 	fmt.Println(ui.Green.Render("✓ Indexing complete. Your brain is up to date."))
 	return nil
-}
-
-// runStep wraps a single qmd invocation in a spinner. Returns (success, error).
-// A false success with nil error means "we printed the problem and the caller
-// should just stop cleanly".
-func runStep(ctx context.Context, label string, args []string) (bool, error) {
-	var res qmdResult
-	var runErr error
-	action := func() {
-		res, runErr = runQmd(ctx, args...)
-	}
-	if err := spinner.New().Title(label + "…").Action(action).Run(); err != nil {
-		return false, err
-	}
-
-	if runErr != nil {
-		if isMissing(runErr) {
-			printQmdMissing()
-			return false, nil
-		}
-		return false, runErr
-	}
-
-	if res.exitCode != 0 {
-		fmt.Println(ui.Red.Render(label + " — failed"))
-		fmt.Println(ui.Red.Render(config.RewriteQmdOutput(strings.TrimSpace(res.stderr))))
-		return false, nil
-	}
-
-	fmt.Println(ui.Green.Render("✓ " + label))
-	if stdout := strings.TrimSpace(res.stdout); stdout != "" {
-		fmt.Println(ui.Dim.Render(config.RewriteQmdOutput(stdout)))
-	}
-	return true, nil
 }

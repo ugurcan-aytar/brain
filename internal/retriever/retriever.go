@@ -1,69 +1,37 @@
-// Package retriever wraps the qmd subprocess, fans retrieval across
-// collections, normalises qmd's version-drifting JSON shape, applies
-// adaptive min-score filtering, and decides whether the LLM is allowed
-// to run at all (the grounding gate). Callers hand Retrieve a query +
-// Options and get back scored, filtered chunks; RawSearch is the
-// no-filter variant used by `brain search`.
+// Package retriever wraps recall.Engine with brain's adaptive scoring,
+// grounding gate, and multi-collection helpers. Callers (ask, chat,
+// search) hand in a *engine.Engine + Options and get back scored
+// []Chunk results ready for prompt assembly.
 package retriever
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"regexp"
-	"sort"
 	"strings"
-	"sync"
+
+	"github.com/ugurcan-aytar/recall/pkg/recall"
 
 	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 )
 
-// Chunk is a single retrieved note fragment returned by qmd.
+// Chunk is brain's normalized view of a retrieved note fragment. Kept
+// stable across the qmd → recall migration so prompt / ui / history
+// packages don't need to change.
 type Chunk struct {
 	DisplayPath string
 	Title       string
 	Score       float64
 	Snippet     string
 	DocID       string
-	File        string // qmd:// path for fetching full document
+	File        string // recall "path" — "<collection>/<relative-path>"
 }
-
-// rawResult is the untyped shape of a qmd JSON entry — qmd uses a few
-// different field names across versions, so we normalize in parse().
-type rawResult struct {
-	DocID       string  `json:"docid"`
-	File        string  `json:"file"`
-	DisplayPath string  `json:"displayPath"`
-	Title       string  `json:"title"`
-	Score       float64 `json:"score"`
-	Snippet     string  `json:"snippet"`
-	Content     string  `json:"content"`
-}
-
-var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\[\?[0-9]*[a-zA-Z]`)
-
-// extractJSON strips ANSI escapes from qmd stdout and slices the first top-level
-// JSON array out of the noise. qmd sometimes prints banner lines before/after.
-func extractJSON(raw string) string {
-	clean := ansiRegexp.ReplaceAllString(raw, "")
-	start := strings.Index(clean, "[")
-	end := strings.LastIndex(clean, "]")
-	if start == -1 || end == -1 || end <= start {
-		return "[]"
-	}
-	return clean[start : end+1]
-}
-
-// ErrQmdMissing is returned when the qmd binary is not in PATH.
-var ErrQmdMissing = errors.New("qmd is not installed or not found in PATH")
 
 // Options configures a retrieval call. Collection scopes a single
-// collection; Collections fans out in parallel across multiple collections
-// and merges by docid. TopK defaults to config.Default.TopK when zero;
-// MinScore overrides the default adaptive floor when non-nil.
+// collection; Collections fans out to several (joined with commas and
+// passed to recall, which handles multi-collection querying natively).
+// TopK defaults to config.Default.TopK when zero; MinScore overrides the
+// adaptive floor when non-nil.
 type Options struct {
 	Collection  string
 	Collections []string
@@ -78,95 +46,149 @@ func topKOr(n int) int {
 	return config.Default.TopK
 }
 
-func buildQmdArgs(subcmd, query string, opt Options, minScore float64) []string {
-	args := []string{subcmd, query, "--json", "-n", fmt.Sprintf("%d", topKOr(opt.TopK)), "--min-score", fmt.Sprintf("%g", minScore)}
+// collectionArg joins Collection + Collections into the single string
+// recall's SearchOptions.Collection expects (comma-separated, "" for
+// all).
+func collectionArg(opt Options) string {
+	names := map[string]struct{}{}
 	if opt.Collection != "" {
-		args = append(args, "-c", opt.Collection)
+		names[opt.Collection] = struct{}{}
 	}
-	return args
+	for _, c := range opt.Collections {
+		if c != "" {
+			names[c] = struct{}{}
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(names))
+	for n := range names {
+		out = append(out, n)
+	}
+	return strings.Join(out, ",")
 }
 
-// runSingleQuery invokes `qmd query` and parses the JSON array out of stdout.
-// If `qmd query` fails (e.g. vec0 crash), it falls back to `qmd search`
-// (BM25-only) and prints a one-time warning so the user knows retrieval
-// quality is degraded. Returns an empty slice on cancellation (SIGINT / ctx).
-func runSingleQuery(ctx context.Context, query string, opt Options) ([]Chunk, error) {
-	minScore := config.Default.MinScore
+// Retrieve runs a hybrid (BM25 + vector + RRF) search through
+// recall.Engine. When no embedder is available (stub build + no API
+// provider), recall degrades to BM25 automatically — brain doesn't
+// need to branch.
+//
+// Results are adaptively filtered (40% of top score floor) before
+// return, matching the behaviour brain had against qmd.
+func Retrieve(ctx context.Context, eng *engine.Engine, query string, opt Options) ([]Chunk, error) {
+	_ = ctx // reserved — recall's Engine doesn't thread ctx yet; see recall#ctx.
+
+	topK := topKOr(opt.TopK)
+	col := collectionArg(opt)
+
+	emb, err := eng.Embedder()
+	if err != nil {
+		return nil, fmt.Errorf("resolve embedder: %w", err)
+	}
+
+	searchOpts := []recall.SearchOption{recall.WithLimit(topK)}
+	if col != "" {
+		searchOpts = append(searchOpts, recall.WithCollection(col))
+	}
 	if opt.MinScore != nil {
-		minScore = *opt.MinScore
+		searchOpts = append(searchOpts, recall.WithMinScore(*opt.MinScore))
 	}
 
-	chunks, err := runQmdSubcmd(ctx, "query", query, opt, minScore)
+	fused, err := eng.Recall().SearchHybrid(emb, query, searchOpts...)
 	if err != nil {
-		if errors.Is(err, ErrQmdMissing) {
-			return nil, err
-		}
-		// qmd query failed (vec0 crash, etc.) — fall back to BM25-only search.
-		warnFallback()
-		chunks, err = runQmdSubcmd(ctx, "search", query, opt, minScore)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return chunks, nil
-}
-
-var (
-	fallbackWarned bool
-)
-
-func warnFallback() {
-	if !fallbackWarned {
-		fallbackWarned = true
-		fmt.Fprintf(os.Stderr, "\033[2m  ⚠ hybrid search failed — falling back to keyword search (run brain doctor for details)\033[0m\n")
-	}
-}
-
-func runQmdSubcmd(ctx context.Context, subcmd, query string, opt Options, minScore float64) ([]Chunk, error) {
-	args := buildQmdArgs(subcmd, query, opt, minScore)
-
-	cmd := exec.CommandContext(ctx, config.Default.QmdBinary, args...)
-	cmd.Env = config.QmdEnv()
-
-	stdout, err := cmd.Output()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			if exitErr.ExitCode() == 130 {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("qmd %s exited with code %d: %s", subcmd, exitErr.ExitCode(), strings.TrimSpace(string(exitErr.Stderr)))
-		}
-		if ctx.Err() != nil {
-			return nil, nil
-		}
-		var notFound *exec.Error
-		if errors.As(err, &notFound) {
-			return nil, ErrQmdMissing
-		}
-		return nil, err
+		return nil, fmt.Errorf("hybrid search: %w", err)
 	}
 
-	var parsed []rawResult
-	if err := json.Unmarshal([]byte(extractJSON(string(stdout))), &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse qmd output: %w", err)
-	}
-
-	out := make([]Chunk, 0, len(parsed))
-	for _, r := range parsed {
-		c := Chunk{
-			DisplayPath: firstNonEmpty(r.DisplayPath, r.Title, "unknown"),
-			Title:       firstNonEmpty(r.Title, r.DisplayPath, "Untitled"),
-			Score:       r.Score,
-			Snippet:     firstNonEmpty(r.Snippet, r.Content),
+	chunks := make([]Chunk, 0, len(fused))
+	for _, r := range fused {
+		chunks = append(chunks, Chunk{
+			DisplayPath: displayPathOf(r.CollectionName, r.Path),
+			Title:       firstNonEmpty(r.Title, r.Path, "Untitled"),
+			Score:       r.FusedScore,
+			Snippet:     r.Snippet,
 			DocID:       r.DocID,
-			File:        r.File,
-		}
-		if c.Score >= minScore {
+			File:        joinCollectionPath(r.CollectionName, r.Path),
+		})
+	}
+	return adaptiveFilter(chunks), nil
+}
+
+// RawSearch runs a single BM25 query through recall.Engine with no
+// min-score filter and a small default TopK. Used by `brain search`
+// when the user wants to eyeball the raw retrieval surface.
+func RawSearch(ctx context.Context, eng *engine.Engine, query string, opt Options) ([]Chunk, error) {
+	_ = ctx
+
+	topK := opt.TopK
+	if topK == 0 {
+		topK = 10
+	}
+	col := collectionArg(opt)
+
+	searchOpts := []recall.SearchOption{recall.WithLimit(topK), recall.WithMinScore(0)}
+	if col != "" {
+		searchOpts = append(searchOpts, recall.WithCollection(col))
+	}
+
+	results, err := eng.Recall().SearchBM25(query, searchOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("bm25 search: %w", err)
+	}
+
+	out := make([]Chunk, 0, len(results))
+	for _, r := range results {
+		out = append(out, Chunk{
+			DisplayPath: displayPathOf(r.CollectionName, r.Path),
+			Title:       firstNonEmpty(r.Title, r.Path, "Untitled"),
+			Score:       r.Score,
+			Snippet:     r.Snippet,
+			DocID:       r.DocID,
+			File:        joinCollectionPath(r.CollectionName, r.Path),
+		})
+	}
+	return out, nil
+}
+
+// adaptiveFilter drops results below 40% of the top score. qmd's scale
+// kept BM25 scores well above 0.05 in practice, so the old brain
+// defensively lifted the floor to that value — but recall's FTS5 bm25
+// can return 0.0 on tiny corpora or single-term matches, and lifting
+// the floor to 0.05 would drop the top result. We keep the noise floor
+// but only apply it when the top score is already comfortably above
+// it; otherwise the top chunk always survives.
+func adaptiveFilter(chunks []Chunk) []Chunk {
+	if len(chunks) == 0 {
+		return chunks
+	}
+	topScore := chunks[0].Score
+	floor := topScore * 0.4
+	const noiseFloor = 0.05
+	if topScore > noiseFloor && floor < noiseFloor {
+		floor = noiseFloor
+	}
+	out := make([]Chunk, 0, len(chunks))
+	for _, c := range chunks {
+		if c.Score >= floor {
 			out = append(out, c)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// GroundingGate reports whether there are enough relevant chunks to
+// justify an LLM call. Also prints user-facing messages so callers can
+// just early-return on false.
+func GroundingGate(chunks []Chunk) bool {
+	if len(chunks) == 0 {
+		fmt.Println(yellow("No relevant notes found for this query."))
+		fmt.Println(dim("Try different keywords, or run `brain index` to re-index."))
+		return false
+	}
+	if len(chunks) <= 2 {
+		fmt.Println(dim(fmt.Sprintf("⚠ Only %d relevant note(s) found — answer may be limited.\n", len(chunks))))
+	}
+	return true
 }
 
 func firstNonEmpty(values ...string) string {
@@ -178,112 +200,27 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-type collectionResult struct {
-	chunks []Chunk
-	err    error
+// displayPathOf formats the collection + path pair the way ui expects.
+// "notes/subdir/file.md" reads better than bare "subdir/file.md" when a
+// user has several collections registered.
+func displayPathOf(collectionName, path string) string {
+	if collectionName == "" {
+		return path
+	}
+	if path == "" {
+		return collectionName
+	}
+	return collectionName + "/" + path
 }
 
-// Retrieve fans out across collections (if provided), merges results by docid
-// keeping the highest score per document, applies adaptive minimum-score
-// filtering, and returns them sorted descending.
-func Retrieve(ctx context.Context, query string, opt Options) ([]Chunk, error) {
-	if len(opt.Collections) == 0 {
-		chunks, err := runSingleQuery(ctx, query, opt)
-		if err != nil {
-			return nil, err
-		}
-		return adaptiveFilter(chunks), nil
+// joinCollectionPath produces the spec recall.Engine.Get accepts
+// ("<collection>/<path>"). Stored on Chunk.File so enrichment can fetch
+// the full document.
+func joinCollectionPath(collectionName, path string) string {
+	if collectionName == "" || path == "" {
+		return ""
 	}
-
-	results := make([]collectionResult, len(opt.Collections))
-	var wg sync.WaitGroup
-	for i, c := range opt.Collections {
-		wg.Add(1)
-		go func(i int, c string) {
-			defer wg.Done()
-			perCall := opt
-			perCall.Collection = c
-			perCall.Collections = nil
-			chunks, err := runSingleQuery(ctx, query, perCall)
-			results[i] = collectionResult{chunks, err}
-		}(i, c)
-	}
-	wg.Wait()
-
-	seen := map[string]Chunk{}
-	for _, r := range results {
-		if r.err != nil {
-			return nil, r.err
-		}
-		for _, c := range r.chunks {
-			key := c.DocID
-			if key == "" {
-				prefix := c.Snippet
-				if len(prefix) > 50 {
-					prefix = prefix[:50]
-				}
-				key = c.DisplayPath + ":" + prefix
-			}
-			if existing, ok := seen[key]; !ok || c.Score > existing.Score {
-				seen[key] = c
-			}
-		}
-	}
-	out := make([]Chunk, 0, len(seen))
-	for _, c := range seen {
-		out = append(out, c)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-	return adaptiveFilter(out), nil
-}
-
-// adaptiveFilter replaces the old hard MinScore cutoff. Instead of a fixed
-// 0.2 threshold that silently drops chunks on difficult queries, we use
-// 40% of the top score as the floor. When the top chunk scores 0.9 the
-// floor is 0.36 (junk is dropped). When the top chunk scores 0.3 the
-// floor is 0.12 (weak-but-best results survive).
-func adaptiveFilter(chunks []Chunk) []Chunk {
-	if len(chunks) == 0 {
-		return chunks
-	}
-	topScore := chunks[0].Score
-	floor := topScore * 0.4
-	hardFloor := 0.05 // absolute minimum — never surface pure noise
-	if floor < hardFloor {
-		floor = hardFloor
-	}
-	out := make([]Chunk, 0, len(chunks))
-	for _, c := range chunks {
-		if c.Score >= floor {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// RawSearch is like Retrieve but with topK=10 and no minimum-score filter.
-// Used by `brain search`.
-func RawSearch(ctx context.Context, query string, opt Options) ([]Chunk, error) {
-	zero := 0.0
-	opt.MinScore = &zero
-	if opt.TopK == 0 {
-		opt.TopK = 10
-	}
-	return Retrieve(ctx, query, opt)
-}
-
-// GroundingGate reports whether we have enough chunks to call the LLM.
-// It also prints user-facing warnings so callers can simply bail on false.
-func GroundingGate(chunks []Chunk) bool {
-	if len(chunks) == 0 {
-		fmt.Println(yellow("No relevant notes found for this query."))
-		fmt.Println(dim("Try different keywords, or run `brain index` to re-index."))
-		return false
-	}
-	if len(chunks) <= 2 {
-		fmt.Println(dim(fmt.Sprintf("⚠ Only %d relevant note(s) found — answer may be limited.\n", len(chunks))))
-	}
-	return true
+	return collectionName + "/" + path
 }
 
 // tiny color helpers — avoids a ui import cycle (ui depends on retriever).

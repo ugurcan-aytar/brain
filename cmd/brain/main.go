@@ -108,6 +108,7 @@ func newRootCmd() *cobra.Command {
 		commands.NewIndexCmd(),
 		commands.NewFilesCmd(),
 		commands.NewDoctorCmd(),
+		commands.NewMigrateCmd(),
 		commands.NewUpgradeCmd(),
 		commands.NewHistoryCmd(),
 	)

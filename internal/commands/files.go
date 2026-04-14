@@ -3,10 +3,9 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -25,33 +24,39 @@ func NewFilesCmd() *cobra.Command {
 	return cmd
 }
 
-// Files lists every indexed file, optionally scoped to a single collection.
+// Files lists every indexed file, optionally scoped to a single
+// collection. Uses recall.Engine.MultiGet with a matching glob so we
+// only do one round-trip to the DB.
 func Files(ctx context.Context, collection string) error {
-	args := []string{"ls"}
-	if collection != "" {
-		args = append(args, collection)
-	}
+	_ = ctx
 
-	res, err := runQmd(ctx, args...)
+	eng, err := engine.Open()
 	if err != nil {
-		if isMissing(err) {
-			printQmdMissing()
-			return nil
-		}
 		return err
 	}
-	if res.exitCode != 0 {
-		fmt.Println(ui.Red.Render("Failed to list files: " + strings.TrimSpace(res.stderr)))
-		return nil
+	defer eng.Close()
+
+	pattern := "**"
+	if collection != "" {
+		pattern = collection + "/**"
 	}
 
-	output := strings.TrimSpace(res.stdout)
-	if output == "" {
+	docs, err := eng.Recall().MultiGet(pattern)
+	if err != nil {
+		return fmt.Errorf("list files: %w", err)
+	}
+	if len(docs) == 0 {
 		fmt.Println(ui.Yellow.Render("No indexed files found."))
 		fmt.Println(ui.Dim.Render("Run `brain add <path>` then `brain index` to get started."))
 		return nil
 	}
 
-	fmt.Println(config.RewriteQmdOutput(output))
+	for _, d := range docs {
+		if d.CollectionName != "" {
+			fmt.Printf("%s/%s\n", d.CollectionName, d.Path)
+		} else {
+			fmt.Println(d.Path)
+		}
+	}
 	return nil
 }

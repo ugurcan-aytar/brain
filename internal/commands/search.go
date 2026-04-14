@@ -2,11 +2,11 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/retriever"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
@@ -26,20 +26,25 @@ func NewSearchCmd() *cobra.Command {
 	return cmd
 }
 
-// Search runs a raw retrieval (no LLM) and prints the top results with
-// confidence bars — useful for verifying indexing is behaving before
-// you burn tokens on `ask`.
+// Search runs raw BM25 retrieval (no LLM) and prints the top results
+// with confidence bars — useful for verifying indexing is behaving
+// before you burn tokens on `ask`.
 func Search(parent context.Context, query string, collection string) error {
 	ctx, stopSignal := withSignalCancel(parent)
 	defer stopSignal()
 
+	eng, err := engine.Open()
+	if err != nil {
+		return err
+	}
+	defer eng.Close()
+
 	var (
 		results []retriever.Chunk
-		err     error
+		runErr  error
 	)
-
 	action := func() {
-		results, err = retriever.RawSearch(ctx, query, retriever.Options{
+		results, runErr = retriever.RawSearch(ctx, eng, query, retriever.Options{
 			Collection: collection,
 			TopK:       10,
 		})
@@ -47,13 +52,8 @@ func Search(parent context.Context, query string, collection string) error {
 	if spinErr := spinner.New().Title("Searching…").Action(action).Run(); spinErr != nil {
 		return spinErr
 	}
-
-	if err != nil {
-		if errors.Is(err, retriever.ErrQmdMissing) {
-			printQmdMissing()
-			return nil
-		}
-		return err
+	if runErr != nil {
+		return runErr
 	}
 
 	if len(results) == 0 {

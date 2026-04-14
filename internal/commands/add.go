@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -36,9 +36,9 @@ func NewAddCmd() *cobra.Command {
 	return cmd
 }
 
-// Add validates the path exists, registers it as a collection with qmd,
-// and then kicks off an index+embed pass so the new content is immediately
-// queryable.
+// Add validates the path exists, registers it as a collection with
+// recall, and then kicks off an index+embed pass so the new content is
+// immediately queryable.
 func Add(ctx context.Context, path string, opts AddOptions) error {
 	resolved, err := filepath.Abs(path)
 	if err != nil {
@@ -61,39 +61,25 @@ func Add(ctx context.Context, path string, opts AddOptions) error {
 		mask = config.Default.DefaultMask
 	}
 
-	res, err := runQmd(ctx, "collection", "add", resolved, "--name", name, "--mask", mask)
+	eng, err := engine.Open()
 	if err != nil {
-		if isMissing(err) {
-			printQmdMissing()
-			return nil
-		}
 		return err
 	}
-	if res.exitCode != 0 {
-		fmt.Println(ui.Red.Render("Failed to add collection: " + config.RewriteQmdOutput(strings.TrimSpace(res.stderr))))
-		return nil
-	}
+	defer eng.Close()
 
-	if stdout := strings.TrimSpace(res.stdout); stdout != "" {
-		fmt.Println(config.RewriteQmdOutput(stdout))
+	if _, err := eng.Recall().AddCollection(name, resolved, mask, opts.Context); err != nil {
+		fmt.Println(ui.Red.Render("Failed to add collection: " + err.Error()))
+		return nil
 	}
 
 	fmt.Println(ui.Green.Render(fmt.Sprintf("✓ Collection \"%s\" added from %s", name, path)))
 	fmt.Println(ui.Dim.Render("  Mask: " + mask))
-
-	// Set collection context if provided — this tells qmd's HyDE and
-	// reranker what the collection is about, dramatically improving
-	// search quality for domain-specific content.
 	if opts.Context != "" {
-		qmdPath := fmt.Sprintf("qmd://%s/", name)
-		cres, cerr := runQmd(ctx, "context", "add", qmdPath, opts.Context)
-		if cerr == nil && cres.exitCode == 0 {
-			fmt.Println(ui.Dim.Render("  Context: " + opts.Context))
-		}
+		fmt.Println(ui.Dim.Render("  Context: " + opts.Context))
 	} else {
 		fmt.Println(ui.Dim.Render("  Tip: add --context \"description\" to improve search quality"))
 	}
 	fmt.Println()
 
-	return Index(ctx)
+	return indexWithEngine(ctx, eng)
 }

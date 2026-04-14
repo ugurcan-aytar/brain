@@ -3,11 +3,10 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -23,52 +22,32 @@ func NewRemoveCmd() *cobra.Command {
 	}
 }
 
-// Remove unregisters a collection and re-runs qmd update so the embeddings
-// for the removed files drop out of the index. We intentionally do NOT rerun
-// `embed` here — dropping rows doesn't require re-embedding anything.
+// Remove unregisters a collection. recall's RemoveCollection cascades
+// to documents, chunks, and embeddings via foreign-key ON DELETE, so
+// there's no follow-up index run to execute.
 func Remove(ctx context.Context, name string) error {
-	var removeRes qmdResult
-	var removeErr error
-	removeAction := func() {
-		removeRes, removeErr = runQmd(ctx, "collection", "remove", name)
+	_ = ctx
+
+	eng, err := engine.Open()
+	if err != nil {
+		return err
 	}
-	if err := spinner.New().Title(fmt.Sprintf("Removing collection %q…", name)).Action(removeAction).Run(); err != nil {
+	defer eng.Close()
+
+	var removeErr error
+	action := func() {
+		removeErr = eng.Recall().RemoveCollection(name)
+	}
+	if err := spinner.New().Title(fmt.Sprintf("Removing collection %q…", name)).Action(action).Run(); err != nil {
 		return err
 	}
 
 	if removeErr != nil {
-		if isMissing(removeErr) {
-			printQmdMissing()
-			return nil
-		}
-		return removeErr
-	}
-	if removeRes.exitCode != 0 {
-		fmt.Println(ui.Red.Render(fmt.Sprintf("Failed to remove %q", name)))
-		fmt.Println(ui.Red.Render(config.RewriteQmdOutput(strings.TrimSpace(removeRes.stderr))))
+		fmt.Println(ui.Red.Render(fmt.Sprintf("Failed to remove %q: %s", name, removeErr)))
 		return nil
 	}
 
 	fmt.Println(ui.Green.Render(fmt.Sprintf("✓ Removed collection %q", name)))
-	if stdout := strings.TrimSpace(removeRes.stdout); stdout != "" {
-		fmt.Println(ui.Dim.Render(config.RewriteQmdOutput(stdout)))
-	}
-
-	var updateRes qmdResult
-	var updateErr error
-	updateAction := func() {
-		updateRes, updateErr = runQmd(ctx, "update")
-	}
-	if err := spinner.New().Title("Cleaning up index…").Action(updateAction).Run(); err != nil {
-		return err
-	}
-	if updateErr != nil || updateRes.exitCode != 0 {
-		fmt.Println(ui.Red.Render("Index cleanup failed"))
-		return nil
-	}
-	fmt.Println(ui.Green.Render("✓ Index updated"))
-
-	fmt.Println()
-	fmt.Println(ui.Green.Render(fmt.Sprintf("Done. Collection %q fully removed.", name)))
+	fmt.Println(ui.Dim.Render("  Documents, chunks, and embeddings cascaded automatically."))
 	return nil
 }

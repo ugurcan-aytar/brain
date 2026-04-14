@@ -2,29 +2,28 @@ package retriever
 
 import (
 	"context"
-	"os/exec"
-	"strings"
 
-	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 )
 
-// EnrichTopChunks replaces the snippet of the top N results with the full
-// document body via `qmd get`. This works around qmd's per-document dedup:
-// when a long transcript has multiple relevant sections, the snippet only
-// carries the highest-scoring chunk (often the intro), but the full body
-// includes everything — so the LLM sees the complete source, not just the
-// winning chunk.
+// EnrichTopChunks replaces the Snippet of the top N results with the
+// full document body via recall.Engine.Get. qmd's old per-document dedup
+// meant the snippet only carried the winning chunk; recall doesn't have
+// that problem, but enriching still helps for long transcripts where
+// relevant detail lives outside the top chunk.
 //
-// Only enriches chunks whose file path is known (non-empty). Falls back to
-// the original snippet on any error.
-func EnrichTopChunks(ctx context.Context, chunks []Chunk, topN int) []Chunk {
-	if topN <= 0 || len(chunks) == 0 {
+// Only enriches chunks whose File path is populated. Falls back to the
+// original snippet on any error. Caps at 5 regardless of topN so we
+// don't balloon the token budget.
+func EnrichTopChunks(ctx context.Context, eng *engine.Engine, chunks []Chunk, topN int) []Chunk {
+	_ = ctx // reserved — recall.Engine.Get is not ctx-aware yet.
+
+	if topN <= 0 || len(chunks) == 0 || eng == nil {
 		return chunks
 	}
 	if topN > len(chunks) {
 		topN = len(chunks)
 	}
-	// Cap to avoid fetching too many full documents — each is a subprocess.
 	if topN > 5 {
 		topN = 5
 	}
@@ -36,36 +35,21 @@ func EnrichTopChunks(ctx context.Context, chunks []Chunk, topN int) []Chunk {
 		if out[i].File == "" {
 			continue
 		}
-		body := fetchFullBody(ctx, out[i].File)
+		doc, err := eng.Recall().Get(out[i].File)
+		if err != nil || doc == nil {
+			continue
+		}
+		body := doc.Content
+		// Truncate very long documents to cap the context budget. 30K
+		// chars ≈ ~8K tokens — enough to capture detail from long
+		// transcripts without blowing up the prompt.
+		const maxLen = 30000
+		if len(body) > maxLen {
+			body = body[:maxLen] + "\n[… truncated — full document is longer]"
+		}
 		if body != "" {
 			out[i].Snippet = body
 		}
 	}
 	return out
-}
-
-// fetchFullBody calls `qmd get <path>` and returns the full document text.
-// Returns empty string on any error so callers keep the original snippet.
-func fetchFullBody(ctx context.Context, filePath string) string {
-	if !strings.HasPrefix(filePath, "qmd://") {
-		return ""
-	}
-	path := filePath
-
-	cmd := exec.CommandContext(ctx, config.Default.QmdBinary, "get", path)
-	cmd.Env = config.QmdEnv()
-
-	stdout, err := cmd.Output()
-	if err != nil || len(stdout) == 0 {
-		return ""
-	}
-
-	body := string(stdout)
-	// Truncate very long documents to avoid blowing up the context window.
-	// 30K chars ≈ ~8K tokens — enough to capture detail from long transcripts.
-	const maxLen = 30000
-	if len(body) > maxLen {
-		body = body[:maxLen] + "\n[… truncated — full document is longer]"
-	}
-	return body
 }

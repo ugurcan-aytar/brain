@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/history"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/picker"
@@ -108,6 +109,12 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		return nil
 	}
 
+	eng, err := engine.Open()
+	if err != nil {
+		return err
+	}
+	defer eng.Close()
+
 	// --collection / -c lets users skip the picker when they already know
 	// which collection they want to talk to — same shortcut `brain ask`
 	// supports. Primary use is scripting/demos, but it's also just nicer
@@ -116,7 +123,11 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 	if opts.Collection != "" {
 		activeCollections = []string{opts.Collection}
 	} else {
-		picked, err := picker.Pick(ctx, picker.PickOptions{})
+		names, nerr := collectionNames(eng)
+		if nerr != nil {
+			return nerr
+		}
+		picked, err := picker.Pick(ctx, names, picker.PickOptions{})
 		if err != nil {
 			if errors.Is(err, picker.ErrCancelled) || errors.Is(err, picker.ErrNoCollections) {
 				if errors.Is(err, picker.ErrNoCollections) {
@@ -230,7 +241,13 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		}
 
 		if resolved == "/collections" {
-			picked, perr := picker.Pick(ctx, picker.PickOptions{})
+			names, nerr := collectionNames(eng)
+			if nerr != nil {
+				fmt.Println(ui.Red.Render("  " + nerr.Error()))
+				fmt.Println()
+				continue
+			}
+			picked, perr := picker.Pick(ctx, names, picker.PickOptions{})
 			if perr != nil && !errors.Is(perr, picker.ErrCancelled) {
 				fmt.Println(ui.Red.Render("  " + perr.Error()))
 				fmt.Println()
@@ -300,7 +317,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		}
 
 		if resolved == "/challenge" {
-			if err := runChallenge(ctx, &historyMessages, &lastChunks, currentModel); err != nil {
+			if err := runChallenge(ctx, eng, &historyMessages, &lastChunks, currentModel); err != nil {
 				return err
 			}
 			continue
@@ -335,7 +352,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		)
 		searchStart := time.Now()
 		searchAction := func() {
-			chunks, retrErr = retriever.Retrieve(streamCtx, input, retriever.Options{
+			chunks, retrErr = retriever.Retrieve(streamCtx, eng, input, retriever.Options{
 				Collections: activeCollections,
 			})
 		}
@@ -356,10 +373,6 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		if retrErr != nil {
 			cancel()
 			<-done
-			if errors.Is(retrErr, retriever.ErrQmdMissing) {
-				printQmdMissing()
-				continue
-			}
 			return retrErr
 		}
 
@@ -369,7 +382,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 			continue
 		}
 
-		chunks = retriever.EnrichTopChunks(streamCtx, chunks, 3)
+		chunks = retriever.EnrichTopChunks(streamCtx, eng, chunks, 3)
 
 		if deepMode {
 			chunks = retriever.DeepFilter(streamCtx, chunks, input, llm.QuickComplete)
@@ -492,6 +505,7 @@ func trimHistory(msgs []llm.Message) []llm.Message {
 // history and lastChunks on success so /sources reflects the challenge run.
 func runChallenge(
 	ctx context.Context,
+	eng *engine.Engine,
 	historyMessages *[]llm.Message,
 	lastChunks *[]retriever.Chunk,
 	currentModel string,
@@ -517,7 +531,13 @@ func runChallenge(
 		return nil
 	}
 
-	challengeCols, err := picker.Pick(ctx, picker.PickOptions{Title: "Challenge with collections"})
+	names, nerr := collectionNames(eng)
+	if nerr != nil {
+		fmt.Println(ui.Red.Render("  " + nerr.Error()))
+		fmt.Println()
+		return nil
+	}
+	challengeCols, err := picker.Pick(ctx, names, picker.PickOptions{Title: "Challenge with collections"})
 	if err != nil {
 		if !errors.Is(err, picker.ErrCancelled) {
 			fmt.Println(ui.Red.Render("  " + err.Error()))
@@ -535,7 +555,7 @@ func runChallenge(
 		retrErr         error
 	)
 	action := func() {
-		challengeChunks, retrErr = retriever.Retrieve(challengeCtx, lastUser.Content, retriever.Options{
+		challengeChunks, retrErr = retriever.Retrieve(challengeCtx, eng, lastUser.Content, retriever.Options{
 			Collections: challengeCols,
 		})
 	}
@@ -549,10 +569,6 @@ func runChallenge(
 		return nil
 	}
 	if retrErr != nil {
-		if errors.Is(retrErr, retriever.ErrQmdMissing) {
-			printQmdMissing()
-			return nil
-		}
 		return retrErr
 	}
 

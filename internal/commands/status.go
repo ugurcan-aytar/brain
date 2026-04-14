@@ -3,10 +3,10 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -22,24 +22,41 @@ func NewStatusCmd() *cobra.Command {
 	}
 }
 
-// Status runs `qmd status` and appends the brain-specific config block so
-// users can see the model, token limits, and retrieval thresholds in one
-// place.
+// Status shows recall-powered index stats (collection count, document
+// count, embedding count) followed by the brain-specific config block.
 func Status(ctx context.Context) error {
-	res, err := runQmd(ctx, "status")
+	_ = ctx
+
+	eng, err := engine.Open()
 	if err != nil {
-		if isMissing(err) {
-			printQmdMissing()
-			return nil
-		}
-		return err
+		return fmt.Errorf("open engine: %w", err)
 	}
-	if res.exitCode != 0 {
-		fmt.Println(ui.Red.Render("Status check failed: " + config.RewriteQmdOutput(strings.TrimSpace(res.stderr))))
-		return nil
+	defer eng.Close()
+
+	cols, err := eng.Recall().ListCollections()
+	if err != nil {
+		return fmt.Errorf("list collections: %w", err)
+	}
+	docs, err := eng.Recall().MultiGet("**")
+	if err != nil {
+		return fmt.Errorf("count documents: %w", err)
+	}
+	embCount, err := eng.Recall().Store().EmbeddingCount()
+	if err != nil {
+		return fmt.Errorf("count embeddings: %w", err)
 	}
 
-	fmt.Println(config.RewriteQmdOutput(strings.TrimSpace(res.stdout)))
+	fmt.Println(ui.Bold.Render("recall index"))
+	fmt.Println(ui.Dim.Render(fmt.Sprintf("  Collections: %d", len(cols))))
+	fmt.Println(ui.Dim.Render(fmt.Sprintf("  Documents:   %d", len(docs))))
+	fmt.Println(ui.Dim.Render(fmt.Sprintf("  Embeddings:  %d", embCount)))
+	if len(cols) > 0 {
+		fmt.Println()
+		for _, c := range cols {
+			fmt.Println(ui.Dim.Render(fmt.Sprintf("  - %-20s %s", c.Name, c.Path)))
+		}
+	}
+
 	fmt.Println()
 	fmt.Println(ui.Dim.Render("── Brain Config ─────────────────────"))
 	fmt.Println(ui.Dim.Render(fmt.Sprintf("  Model:      %s", config.Default.Model)))

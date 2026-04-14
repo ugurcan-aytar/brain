@@ -1,69 +1,74 @@
-package retriever
+package retriever_test
 
 import (
 	"context"
 	"testing"
+
+	"github.com/ugurcan-aytar/brain/internal/retriever"
 )
 
+func TestEnrichTopChunksFetchesFullBody(t *testing.T) {
+	eng := newRetrieverEngine(t, map[string]string{
+		"long.md": "# Long Doc\nThis is a reasonably long body that the snippet truncation should surface in full when enriched.",
+	})
+
+	// Simulate what Retrieve would produce: one chunk pointing at long.md.
+	chunks := []retriever.Chunk{
+		{DisplayPath: "notes/long.md", Title: "Long Doc", Score: 0.9,
+			Snippet: "tiny snippet", File: "notes/long.md"},
+	}
+	out := retriever.EnrichTopChunks(context.Background(), eng, chunks, 3)
+	if len(out) != 1 {
+		t.Fatalf("len(out) = %d, want 1", len(out))
+	}
+	if out[0].Snippet == "tiny snippet" {
+		t.Error("EnrichTopChunks should have replaced snippet with full body")
+	}
+}
+
 func TestEnrichTopChunksSkipsEmptyFile(t *testing.T) {
-	chunks := []Chunk{
-		{DisplayPath: "a.md", Title: "A", Score: 0.9, Snippet: "original", File: ""},
+	eng := newRetrieverEngine(t, map[string]string{"x.md": "x"})
+	chunks := []retriever.Chunk{
+		{DisplayPath: "notes/x.md", Score: 0.9, Snippet: "original", File: ""},
 	}
-	result := EnrichTopChunks(context.Background(), chunks, 3)
-	if result[0].Snippet != "original" {
-		t.Error("should keep original snippet when File is empty")
-	}
-}
-
-func TestEnrichTopChunksSkipsNonQmdPath(t *testing.T) {
-	chunks := []Chunk{
-		{DisplayPath: "a.md", Title: "A", Score: 0.9, Snippet: "original", File: "not-a-qmd-path"},
-	}
-	result := EnrichTopChunks(context.Background(), chunks, 3)
-	if result[0].Snippet != "original" {
-		t.Error("should keep original snippet when File doesn't start with qmd://")
+	out := retriever.EnrichTopChunks(context.Background(), eng, chunks, 3)
+	if out[0].Snippet != "original" {
+		t.Error("EnrichTopChunks should keep original snippet when File is empty")
 	}
 }
 
-func TestEnrichTopChunksDoesNotMutateOriginal(t *testing.T) {
-	chunks := []Chunk{
-		{DisplayPath: "a.md", Score: 0.9, Snippet: "original", File: "qmd://test/a.txt"},
-		{DisplayPath: "b.md", Score: 0.5, Snippet: "second", File: ""},
+func TestEnrichTopChunksDoesNotMutateInput(t *testing.T) {
+	eng := newRetrieverEngine(t, map[string]string{"x.md": "actual body"})
+	chunks := []retriever.Chunk{
+		{DisplayPath: "notes/x.md", Score: 0.9, Snippet: "original", File: "notes/x.md"},
 	}
-	_ = EnrichTopChunks(context.Background(), chunks, 1)
+	_ = retriever.EnrichTopChunks(context.Background(), eng, chunks, 1)
 	if chunks[0].Snippet != "original" {
-		t.Error("EnrichTopChunks should not mutate the input slice")
-	}
-}
-
-func TestEnrichTopChunksRespectsCap(t *testing.T) {
-	chunks := make([]Chunk, 10)
-	for i := range chunks {
-		chunks[i] = Chunk{
-			DisplayPath: "x.md",
-			Score:       float64(10-i) / 10,
-			Snippet:     "snippet",
-			File:        "qmd://test/x.txt",
-		}
-	}
-	// topN=20 should be capped to 5 internally
-	result := EnrichTopChunks(context.Background(), chunks, 20)
-	if len(result) != 10 {
-		t.Errorf("expected all 10 chunks returned, got %d", len(result))
-	}
-}
-
-func TestEnrichTopChunksEmptyInput(t *testing.T) {
-	result := EnrichTopChunks(context.Background(), nil, 3)
-	if len(result) != 0 {
-		t.Errorf("expected empty result for nil input, got %d", len(result))
+		t.Error("EnrichTopChunks mutated the input slice")
 	}
 }
 
 func TestEnrichTopChunksZeroN(t *testing.T) {
-	chunks := []Chunk{{DisplayPath: "a.md", Score: 0.9, Snippet: "orig"}}
-	result := EnrichTopChunks(context.Background(), chunks, 0)
-	if result[0].Snippet != "orig" {
+	eng := newRetrieverEngine(t, map[string]string{"x.md": "x"})
+	chunks := []retriever.Chunk{{DisplayPath: "notes/x.md", Score: 0.9, Snippet: "orig"}}
+	out := retriever.EnrichTopChunks(context.Background(), nil, chunks, 0)
+	if out[0].Snippet != "orig" {
 		t.Error("topN=0 should not enrich anything")
+	}
+	_ = eng
+}
+
+func TestEnrichTopChunksNilEngineIsSafe(t *testing.T) {
+	chunks := []retriever.Chunk{{DisplayPath: "notes/x.md", Score: 0.9, Snippet: "orig", File: "notes/x.md"}}
+	out := retriever.EnrichTopChunks(context.Background(), nil, chunks, 3)
+	if out[0].Snippet != "orig" {
+		t.Error("nil engine should no-op, not crash")
+	}
+}
+
+func TestEnrichTopChunksEmptyInput(t *testing.T) {
+	out := retriever.EnrichTopChunks(context.Background(), nil, nil, 3)
+	if len(out) != 0 {
+		t.Errorf("expected empty result for nil input, got %d", len(out))
 	}
 }

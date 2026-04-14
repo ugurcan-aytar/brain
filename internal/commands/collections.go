@@ -3,10 +3,9 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/config"
+	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -22,23 +21,22 @@ func NewCollectionsCmd() *cobra.Command {
 	}
 }
 
-// Collections lists every registered qmd collection.
+// Collections prints every registered recall collection plus its doc
+// count and (when set) its context blurb.
 func Collections(ctx context.Context) error {
-	res, err := runQmd(ctx, "collection", "list")
+	_ = ctx
+
+	eng, err := engine.Open()
 	if err != nil {
-		if isMissing(err) {
-			printQmdMissing()
-			return nil
-		}
 		return err
 	}
-	if res.exitCode != 0 {
-		fmt.Println(ui.Red.Render("Failed to list collections: " + strings.TrimSpace(res.stderr)))
-		return nil
-	}
+	defer eng.Close()
 
-	output := strings.TrimSpace(res.stdout)
-	if output == "" {
+	cols, err := eng.Recall().ListCollections()
+	if err != nil {
+		return fmt.Errorf("list collections: %w", err)
+	}
+	if len(cols) == 0 {
 		fmt.Println(ui.Yellow.Render("No collections registered."))
 		fmt.Println(ui.Dim.Render("Add one with: brain add <path>"))
 		return nil
@@ -46,6 +44,12 @@ func Collections(ctx context.Context) error {
 
 	fmt.Println(ui.Bold.Render("Registered collections:"))
 	fmt.Println()
-	fmt.Println(config.RewriteQmdOutput(output))
+	for _, c := range cols {
+		fmt.Printf("  %s\n", c.Name)
+		fmt.Println(ui.Dim.Render(fmt.Sprintf("    %s", c.Path)))
+		if c.Context != "" {
+			fmt.Println(ui.Dim.Render("    Context: " + c.Context))
+		}
+	}
 	return nil
 }
