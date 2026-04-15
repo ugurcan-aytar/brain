@@ -141,7 +141,7 @@ No `sudo` needed — Homebrew manages its own prefix. Works on macOS (arm64) and
 curl -sSfL https://raw.githubusercontent.com/ugurcan-aytar/brain/main/install.sh | sh
 ```
 
-The script downloads the right prebuilt binary for your OS/arch, verifies its SHA-256 against `checksums.txt`, drops it into `/usr/local/bin` (or `~/.local/bin` as a fallback), and runs `brain doctor` at the end to confirm your LLM backend is wired up. Retrieval is handled in-process by the embedded [recall](https://github.com/ugurcan-aytar/recall) library — no Node.js, no npm, no second binary.
+The script downloads the right prebuilt binary for your OS/arch, verifies its SHA-256 against `checksums.txt`, drops it into `/usr/local/bin` (or `~/.local/bin` as a fallback), and runs `brain doctor` at the end to confirm your LLM backend is wired up. Retrieval is handled by the embedded [recall](https://github.com/ugurcan-aytar/recall) library — no Node.js, no npm, no second binary to chase. Local embedding and generation use llama.cpp's official `llama-server` prebuilt as a subprocess (auto-downloaded by recall on first use, lives in `~/.recall/bin/llamacpp/`).
 
 Environment overrides: `BRAIN_VERSION=v1.2.3` to pin a release, `BRAIN_PREFIX=$HOME/.local` to change the install prefix.
 
@@ -385,11 +385,13 @@ contract between the two tools was a separate surface to keep in sync.
 
 [recall](https://github.com/ugurcan-aytar/recall) is a Go port of the
 same core ideas (BM25 via SQLite FTS5, vector via sqlite-vec, RRF
-fusion) purpose-built to be imported as a library. brain now links it
-directly: one binary, no runtime dependency on Node, zero subprocess
-cost, typed return values. For BM25 and API-embedded hybrid search
-that's all you need. The local GGUF embedder stays an opt-in build tag
-(`embed_llama`) for users who want fully offline vector search.
+fusion) purpose-built to be imported as a library. brain links it
+directly: one binary for the retrieval primitives, no runtime
+dependency on Node, typed return values, no cross-tool JSON contract
+to keep in sync. Local embedding and generation run through recall's
+llama.cpp-subprocess backend (auto-downloaded on first use) — no build
+tags, no CGo on the inference hot path, fully offline once the
+model + llama-server prebuilt are cached locally.
 
 ### Why direct HTTP instead of the Anthropic SDK?
 
