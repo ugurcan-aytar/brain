@@ -184,6 +184,13 @@ jobs:
 
             def install
               bin.install "brain"
+              # Cobra exposes a hidden 'completion <shell>' subcommand
+              # that prints a shell-specific completion script. The
+              # standard Homebrew helper drops the output into the
+              # right fpath / completions dir per shell so users get
+              # tab-completion automatically — no manual setup, no
+              # source line in .zshrc.
+              generate_completions_from_executable(bin/"brain", "completion")
             end
 
             def caveats
