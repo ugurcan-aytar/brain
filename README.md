@@ -447,6 +447,23 @@ Before opening a PR:
 2. `go test ./...` must pass.
 3. New behavior should come with a test.
 
+## Credits
+
+brain's retrieval layer is powered by [recall](https://github.com/ugurcan-aytar/recall), a local-first hybrid search engine. recall's architecture was originally inspired by [qmd](https://github.com/tobi/qmd) by Tobi Lütke.
+
+What recall brings to brain:
+
+- **BM25 + vector + RRF hybrid fusion** — single Go binary, zero runtime dependencies
+- **Local GGUF embedding** via [nomic-embed-text-v1.5](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5) (~146 MB, Apache 2.0, 768-dim), served through llama.cpp's `llama-server` subprocess
+- **Cross-encoder reranking** via [bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) (continuous 0.0-1.0 scoring through llama-server's `/v1/rerank`) blended with RRF rank by position-aware bands
+- **Query expansion** via [qmd-query-expansion-1.7B](https://huggingface.co/tobil/qmd-query-expansion-1.7B-gguf) (parallel multi-query search: lex + vec variants merged by docid)
+- **HyDE** — hypothetical document embedding: the LLM writes an "ideal answer," recall embeds it as a document and adds that vector as an extra probe
+- **Smart markdown chunking** (900 estimated tokens, break-point scoring) + **AST-aware code chunking** via [tree-sitter](https://github.com/smacker/go-tree-sitter) for Go, Python, TypeScript, Java, Rust
+- **Incremental embedding** — only modified chunks are re-embedded; `chunks.content_hash` gates the re-run
+- **Adaptive min-score floor** — 40% of the top result's score as a dynamic threshold, so noisy queries degrade gracefully instead of silently dropping the best available result
+
+The LLM streaming and prompt-caching logic talks directly to the [Anthropic REST API](https://docs.anthropic.com/en/api/) — no SDK dependency. The terminal UI is built on [charmbracelet/huh](https://github.com/charmbracelet/huh) (pickers), [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) (styling), and [chzyer/readline](https://github.com/chzyer/readline) (REPL).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
