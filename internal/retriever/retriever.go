@@ -25,6 +25,11 @@ type Chunk struct {
 	Snippet     string
 	DocID       string
 	File        string // recall "path" — "<collection>/<relative-path>"
+
+	// Explain carries a one-line trace when Options.Explain is on —
+	// e.g. "hybrid (rerank+0.72)" or "hyde:0+expand:lex1". Zero-value
+	// on plain Retrieve runs so the common path pays no string cost.
+	Explain string
 }
 
 // Options configures a retrieval call. Collection scopes a single
@@ -32,11 +37,22 @@ type Chunk struct {
 // passed to recall, which handles multi-collection querying natively).
 // TopK defaults to config.Default.TopK when zero; MinScore overrides the
 // adaptive floor when non-nil.
+//
+// Expand / Rerank / Hyde are orthogonal enhancement flags — any
+// subset can be combined. --expand adds LLM-generated lex/vec query
+// variants, --hyde adds LLM-generated hypothetical passages as
+// extra vector probes, --rerank runs a cross-encoder over the top-N
+// fused results and blends the score per-rank-band. Explain, when
+// true, fills Chunk.Explain with a short RRF / reranker trace.
 type Options struct {
 	Collection  string
 	Collections []string
 	TopK        int
 	MinScore    *float64 // nil = use config default
+	Expand      bool
+	Rerank      bool
+	Hyde        bool
+	Explain     bool
 }
 
 func topKOr(n int) int {
@@ -74,9 +90,27 @@ func collectionArg(opt Options) string {
 // provider), recall degrades to BM25 automatically — brain doesn't
 // need to branch.
 //
+// When opt.Expand / opt.Rerank / opt.Hyde are set, the call routes
+// through retrieveEnhanced (see enhanced.go) for the
+// expansion / cross-encoder / hypothetical-doc pipeline. The
+// baseline hybrid path stays in place for plain Retrieve calls so
+// the common case doesn't pay for subprocess boot overhead it
+// won't use.
+//
 // Results are adaptively filtered (40% of top score floor) before
 // return, matching the behaviour brain had against qmd.
 func Retrieve(ctx context.Context, eng *engine.Engine, query string, opt Options) ([]Chunk, error) {
+	if opt.Expand || opt.Rerank || opt.Hyde {
+		return retrieveEnhanced(ctx, eng, query, opt)
+	}
+	return retrieveHybrid(ctx, eng, query, opt)
+}
+
+// retrieveHybrid is the baseline path — a single BM25 + vector + RRF
+// pass, unchanged from pre-v0.3.8 brain. Left here as its own
+// function so retrieveEnhanced can call it for each expansion
+// variant without duplicating the plumbing.
+func retrieveHybrid(ctx context.Context, eng *engine.Engine, query string, opt Options) ([]Chunk, error) {
 	_ = ctx // reserved — recall's Engine doesn't thread ctx yet; see recall#ctx.
 
 	topK := topKOr(opt.TopK)

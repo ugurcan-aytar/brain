@@ -99,18 +99,22 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 
 - **`brain ask "<question>"`** — one-shot Q&A, cited sources, streaming answer
 - **`brain chat`** — interactive multi-turn REPL with slash commands, tab completion, and mid-response cancellation
-- **`brain search "<query>"`** — raw retrieval, no LLM, for verifying your index
+- **`brain search "<query>"`** — raw retrieval, no LLM, for verifying your index; `-n` caps the result count, `--expand` / `--rerank` / `--hyde` / `--explain` mirror the `ask` enhancements so you can tune flags against a concrete output before spending LLM tokens
 - **`brain history`** — every Q&A is saved as a timestamped markdown file with model/collections/elapsed metadata; `brain history browse` opens an interactive TUI picker with `/` filter on questions, `f` for full-text search across answers, `enter` to view, `d` to delete
 - **`/challenge`** — re-score an answer against a different set of sources to check it
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
 - **Full document enrichment** — top results are re-fetched as complete documents so the LLM sees the full source, not just the highest-scoring chunk; long transcripts with detail buried past the intro are handled correctly
 - **`brain add --context "description"`** — tells the search engine what a collection is about, dramatically improving retrieval quality for domain-specific content
-- **`--deep` / `/deep`** — two-pass retrieval: an LLM call filters 20 chunks down to the 8-10 most relevant for deeper synthesis on complex questions
+- **`--expand`** — query expansion via recall's local expansion LLM: generates lex/vec query variants (the retriever runs each and merges) and hypothetical passages that can be combined with `--hyde`
+- **`--hyde`** — Hypothetical Document Embedding: the LLM produces a short "ideal answer" passage, recall embeds it as if it were a real document, and that vector joins the candidate search as an extra probe
+- **`--rerank`** — cross-encoder rerank the top-30 fused candidates via recall's bundled bge-reranker-v2-m3 (continuous 0.0-1.0 relevance score), then blend with RRF rank using the position-aware 75/25 → 60/40 → 40/60 bands
+- **`--explain`** — surface a per-chunk score trace (`orig@0 lex1@3 hyde0@1 rerank=0.87`) so you can see why a document landed where it did
+- **`--deep` / `/deep`** — post-retrieval LLM chunk filter (20 → 8-10). Independent of `--expand`/`--rerank`/`--hyde`; sits after retrieval and reduces the working set handed to the answer-generation prompt. Combine freely with the recall enhancements.
 - **Cross-source tension detection** — the system prompt forces the model to identify disagreements between sources before synthesizing, pushing beyond shallow summary
 - **Adaptive scoring** — instead of a hard relevance cutoff that silently drops chunks, brain uses 40% of the top chunk's score as a dynamic floor; on difficult queries where all scores are low, weak-but-best results survive instead of returning "nothing found"
 - **Citation verification** — after every answer, `[filename.md]` citations are checked against the retrieved sources; fabricated filenames get a `⚠` warning
 - **Prompt caching** — on the Anthropic backend, system directives and conversation history are structured for prompt caching, reducing latency and cost on multi-turn chat sessions
-- **Automatic setup** — if the search engine isn't installed, brain offers to install it on first use; `brain doctor` checks pipeline health (keyword search, vector search, collection context) and prints actionable fix commands
+- **`brain doctor`** — checks pipeline health (recall index reachable, embedder loadable, LLM backend configured) and prints actionable fix commands
 - **Collection picker** — multi-select UI to scope a question to specific note folders
 - **Model switching** — swap between `sonnet` (default), `opus`, and `haiku` mid-session
 - **Ctrl+C everywhere** — cancel retrieval or streaming at any time without leaving your terminal in a broken state
@@ -118,7 +122,8 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 
 ## Requirements
 
-- **macOS or Linux** — the `install.sh` script supports both. Windows isn't supported today; open an issue if you need it and we'll scope the work.
+- **macOS (arm64) or Linux (amd64).** Windows isn't a release target — brain depends on recall's CGo SQLite stack and on llama.cpp's prebuilt llama-server, neither of which we currently build Windows artefacts for.
+- **Linux runtime dep:** minimal container bases (ubuntu without `build-essential`, Alpine, …) need `libgomp1` / `libgomp` installed — recall's llama-server subprocess dlopens OpenMP-linked CPU backend plugins. A normal workstation already has it via `gcc`/`g++`.
 - **At least one LLM backend.** brain picks the first one it finds, in this order:
   1. `ANTHROPIC_API_KEY` — native Claude API, the fastest and cheapest path (recommended).
   2. `OPENAI_API_KEY` — any OpenAI-compatible endpoint. Works out of the box with OpenAI, and via `OPENAI_BASE_URL` also with Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together, Fireworks, etc. See [Configuration](#configuration) for examples.
@@ -198,7 +203,14 @@ thinking-mode responses on a realistic tiny corpus.
 - `-c, --collection <name>` — scope to a single collection (skips the picker)
 - `-m, --model <model>` — `sonnet` (default), `opus`, `haiku`, or a full Anthropic model ID
 - `-M, --mode <mode>` — override the auto-detected thinking mode: `auto`, `recall`, `analysis`, `decision`, `synthesis`
-- `--deep` — two-pass retrieval: LLM filters chunks for deeper analysis on complex questions
+- `-n, --top <int>` — candidate count (default: config `TopK`)
+- `--expand` — query expansion (lex/vec variants + HyDE passages); costs a one-shot expansion-LLM call
+- `--rerank` — cross-encoder rerank the top-30 via recall's bge-reranker-v2-m3; continuous 0-1 scores blended with RRF rank
+- `--hyde` — Hypothetical Document Embedding: LLM-generated answer passages embedded as extra vector probes
+- `--explain` — print a per-chunk score trace (which variant hit it, reranker score)
+- `--deep` — post-retrieval LLM chunk filter (20 → 8-10). Independent of the three flags above; combinable.
+
+**Flags on `search`:** same as `ask` minus the LLM-specific ones (`-m`, `-M`, `--deep`).
 
 **Flags on `chat`:**
 
@@ -363,11 +375,18 @@ by Tobi Lütke, which brain used to shell out to in earlier versions.
 ### Retrieval → grounding → synthesis
 
 ```
-question ──▶ recall hybrid search (BM25 + vector + RRF fusion)
+question ──▶ [--expand] expansion LLM → lex / vec / hyde variants
+         ──▶ recall hybrid search (BM25 + vector + RRF fusion) for the
+             original query + every lex/vec variant, merged by docid
+         ──▶ [--hyde] embed each hypothetical passage → extra vector probe,
+             merged into the same pool
+         ──▶ [--rerank] cross-encoder rerank the top-30 (bge-reranker-v2-m3)
+             → min-max normalise logits → position-aware blend with RRF rank
+             (top-3: 75/25, ranks 4-10: 60/40, ranks 11+: 40/60)
          ──▶ adaptive min-score filter (40% of top score)
          ──▶ grounding gate (skip LLM if no chunks)
          ──▶ enrich top results with full documents (recall.Engine.Get)
-         ──▶ [--deep] LLM filters to 8-10 most relevant chunks
+         ──▶ [--deep] post-retrieval LLM chunk filter (20 → 8-10)
          ──▶ classify query → pick mode directive
          ──▶ build adaptive system prompt (static/dynamic split)
          ──▶ stream response (prompt-cached on Anthropic)
@@ -375,23 +394,29 @@ question ──▶ recall hybrid search (BM25 + vector + RRF fusion)
          ──▶ print sources + save history with metadata
 ```
 
-### Why import `recall` instead of subprocess?
+All bracketed stages are opt-in flags. With none of them set the pipeline
+is a plain BM25 + vector + RRF hybrid — no subprocess boot, no extra
+LLM call beyond the final synthesis.
 
-Earlier brain versions (v0.2.x) shelled out to [qmd](https://github.com/tobi/qmd)
-— a Node.js retrieval engine — for every search. That worked but had
-three friction points: users had to install Node + npm on top of brain,
-every query paid single-digit-ms subprocess overhead, and the JSON
-contract between the two tools was a separate surface to keep in sync.
+### Why recall as a library?
 
-[recall](https://github.com/ugurcan-aytar/recall) is a Go port of the
-same core ideas (BM25 via SQLite FTS5, vector via sqlite-vec, RRF
-fusion) purpose-built to be imported as a library. brain links it
-directly: one binary for the retrieval primitives, no runtime
-dependency on Node, typed return values, no cross-tool JSON contract
-to keep in sync. Local embedding and generation run through recall's
-llama.cpp-subprocess backend (auto-downloaded on first use) — no build
-tags, no CGo on the inference hot path, fully offline once the
-model + llama-server prebuilt are cached locally.
+[recall](https://github.com/ugurcan-aytar/recall) is a Go search
+engine (BM25 via SQLite FTS5, vector via sqlite-vec, RRF fusion,
+cross-encoder reranker, query expansion, HyDE) purpose-built to be
+imported, not shelled out to. brain links it directly: one binary
+for the retrieval primitives, typed return values, no cross-tool
+JSON contract to keep in sync, no separate server to install or keep
+running. Local embedding and generation run through recall's
+llama.cpp-subprocess backend (auto-downloaded on first use, lives
+under `~/.recall/bin/llamacpp/`) — no build tags, no CGo on the
+inference hot path, fully offline once the model + llama-server
+prebuilt are cached locally.
+
+Earlier brain versions (v0.2.x) shelled out to [qmd](https://github.com/tobi/qmd),
+a Node.js retrieval engine. That migration motivated recall's
+library-first design — the friction of requiring Node + npm alongside
+brain, the per-query subprocess overhead, and the JSON-over-stdin
+contract all went away once retrieval moved in-process.
 
 ### Why direct HTTP instead of the Anthropic SDK?
 

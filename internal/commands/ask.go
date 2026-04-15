@@ -19,11 +19,22 @@ import (
 )
 
 // AskOptions are the flags that ride alongside `brain ask`.
+//
+// --expand / --rerank / --hyde are orthogonal enhancements that
+// trade a one-time subprocess boot (~1-3 s for expansion, ~400 ms
+// for reranker) for better retrieval quality — combine freely.
+// --deep is the pre-existing LLM chunk-filter pass; it sits AFTER
+// retrieval and is independent of the three new flags.
 type AskOptions struct {
 	Collection string // single-collection shortcut; skips the picker
 	Model      string // alias or full model ID
 	Mode       string // one of prompt.ValidModes (auto|recall|…)
-	Deep       bool   // two-pass retrieval: LLM filters 20 chunks down to 8-10
+	Deep       bool   // post-retrieval LLM chunk filter (20 → 8-10)
+	Expand     bool   // query expansion via recall's local LLM
+	Rerank     bool   // cross-encoder rerank via recall's bge-reranker
+	Hyde       bool   // hypothetical-doc embedding
+	Explain    bool   // show per-chunk score trace
+	TopK       int    // -n; 0 → config default
 }
 
 // NewAskCmd wires the Ask handler into a Cobra command with its flags.
@@ -40,7 +51,12 @@ func NewAskCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Collection, "collection", "c", "", "Scope search to a specific collection")
 	cmd.Flags().StringVarP(&opts.Model, "model", "m", "sonnet", "Claude model (sonnet, opus, haiku)")
 	cmd.Flags().StringVarP(&opts.Mode, "mode", "M", "auto", "Thinking mode (auto, recall, analysis, decision, synthesis)")
-	cmd.Flags().BoolVar(&opts.Deep, "deep", false, "Two-pass retrieval: LLM filters chunks for deeper analysis")
+	cmd.Flags().BoolVar(&opts.Deep, "deep", false, "Post-retrieval LLM chunk filter (20 → 8-10). Independent of --expand/--rerank/--hyde.")
+	cmd.Flags().BoolVar(&opts.Expand, "expand", false, "Query expansion — run an LLM over the query to produce lex/vec variants + HyDE passages")
+	cmd.Flags().BoolVar(&opts.Rerank, "rerank", false, "Cross-encoder rerank the top-30 candidates via bge-reranker-v2-m3")
+	cmd.Flags().BoolVar(&opts.Hyde, "hyde", false, "HyDE — embed LLM-generated hypothetical answers as extra vector probes")
+	cmd.Flags().BoolVar(&opts.Explain, "explain", false, "Annotate retrieved chunks with a short score trace")
+	cmd.Flags().IntVarP(&opts.TopK, "top", "n", 0, "Candidate count (default: config.TopK)")
 	return cmd
 }
 
@@ -90,6 +106,11 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 	retrieveAction := func() {
 		chunks, retrieveErr = retriever.Retrieve(ctx, eng, question, retriever.Options{
 			Collections: collections,
+			TopK:        opts.TopK,
+			Expand:      opts.Expand,
+			Rerank:      opts.Rerank,
+			Hyde:        opts.Hyde,
+			Explain:     opts.Explain,
 		})
 	}
 	if err := spinner.New().Title("Searching your notes…").Action(retrieveAction).Run(); err != nil {
