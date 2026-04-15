@@ -105,6 +105,7 @@ Every answer `brain` gives is grounded in chunks retrieved from your own notes. 
 - **Adaptive prompt system** — questions are classified into `recall`, `analysis`, `decision`, or `synthesis` modes, each with a different response structure
 - **Full document enrichment** — top results are re-fetched as complete documents so the LLM sees the full source, not just the highest-scoring chunk; long transcripts with detail buried past the intro are handled correctly
 - **`brain add --context "description"`** — tells the search engine what a collection is about, dramatically improving retrieval quality for domain-specific content
+- **`--index <name>`** (global) — keep multiple isolated knowledge bases under one binary (e.g. `brain --index work` vs `brain --index personal`). Backed by recall's named-index convention at `~/.recall/indexes/<name>.db`
 - **`--expand`** — query expansion via recall's local expansion LLM: generates lex/vec query variants (the retriever runs each and merges) and hypothetical passages that can be combined with `--hyde`
 - **`--hyde`** — Hypothetical Document Embedding: the LLM produces a short "ideal answer" passage, recall embeds it as if it were a real document, and that vector joins the candidate search as an extra probe
 - **`--rerank`** — cross-encoder rerank the top-30 fused candidates via recall's bundled bge-reranker-v2-m3 (continuous 0.0-1.0 relevance score), then blend with RRF rank using the position-aware 75/25 → 60/40 → 40/60 bands
@@ -198,6 +199,10 @@ thinking-mode responses on a realistic tiny corpus.
 | `brain chat` | Interactive multi-turn conversation |
 | `brain search "<query>"` | Raw retrieval results (no LLM) |
 
+**Global flag (works on every subcommand):**
+
+- `--index <name>` — use a named isolated recall index at `~/.recall/indexes/<name>.db` instead of the default DB. Lets you keep e.g. `brain --index work …` separated from `brain --index personal …` under one binary. Ignored (with a warning) when `$RECALL_DB_PATH` is set.
+
 **Flags on `ask`:**
 
 - `-c, --collection <name>` — scope to a single collection (skips the picker)
@@ -210,7 +215,7 @@ thinking-mode responses on a realistic tiny corpus.
 - `--explain` — print a per-chunk score trace (which variant hit it, reranker score)
 - `--deep` — post-retrieval LLM chunk filter (20 → 8-10). Independent of the three flags above; combinable.
 
-**Flags on `search`:** same as `ask` minus the LLM-specific ones (`-m`, `-M`, `--deep`).
+**Flags on `search`:** same as `ask` minus the LLM-specific ones (`-m`, `-M`, `--deep`). `--index` works here too (it's global).
 
 **Flags on `chat`:**
 

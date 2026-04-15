@@ -109,7 +109,7 @@ func Chat(ctx context.Context, opts ChatOptions) error {
 		return nil
 	}
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -27,7 +26,7 @@ func NewStatusCmd() *cobra.Command {
 func Status(ctx context.Context) error {
 	_ = ctx
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return fmt.Errorf("open engine: %w", err)
 	}

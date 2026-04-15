@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/retriever"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
@@ -51,7 +50,7 @@ func Search(parent context.Context, query string, opts SearchOptions) error {
 	ctx, stopSignal := withSignalCancel(parent)
 	defer stopSignal()
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

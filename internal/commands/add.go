@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/brain/internal/config"
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -61,7 +60,7 @@ func Add(ctx context.Context, path string, opts AddOptions) error {
 		mask = config.Default.DefaultMask
 	}
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/ugurcan-aytar/recall/pkg/recall"
 
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/llm"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
@@ -43,7 +42,7 @@ func Doctor(ctx context.Context) error {
 	var failures int
 
 	// ── recall index ──────────────────────────────────────────────────
-	eng, engErr := engine.Open()
+	eng, engErr := OpenEngine()
 	if engErr != nil {
 		fail("recall index not reachable")
 		hint(engErr.Error())

@@ -74,7 +74,7 @@ func Ask(parent context.Context, question string, opts AskOptions) error {
 		return nil
 	}
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -28,7 +27,7 @@ func NewRemoveCmd() *cobra.Command {
 func Remove(ctx context.Context, name string) error {
 	_ = ctx
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

@@ -28,7 +28,7 @@ func NewIndexCmd() *cobra.Command {
 // Index re-scans every registered collection and re-embeds new/changed
 // chunks. Safe to re-run: recall skips unchanged files by content hash.
 func Index(ctx context.Context) error {
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

@@ -97,6 +97,12 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Persistent --index flag: lets users keep multiple isolated
+	// recall databases under ~/.recall/indexes/<name>.db. Applies to
+	// every subcommand — `brain --index work ask "…"` opens the
+	// work index for retrieval, answer, and history writes.
+	root.PersistentFlags().StringVar(&commands.IndexName, "index", "",
+		"named recall index (uses ~/.recall/indexes/<name>.db; ignored when $RECALL_DB_PATH is set)")
 	root.AddCommand(
 		commands.NewAskCmd(),
 		commands.NewChatCmd(),

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -30,7 +29,7 @@ func NewFilesCmd() *cobra.Command {
 func Files(ctx context.Context, collection string) error {
 	_ = ctx
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}

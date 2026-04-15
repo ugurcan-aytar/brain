@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/ugurcan-aytar/brain/internal/engine"
 	"github.com/ugurcan-aytar/brain/internal/ui"
 )
 
@@ -26,7 +25,7 @@ func NewCollectionsCmd() *cobra.Command {
 func Collections(ctx context.Context) error {
 	_ = ctx
 
-	eng, err := engine.Open()
+	eng, err := OpenEngine()
 	if err != nil {
 		return err
 	}
