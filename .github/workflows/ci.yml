@@ -31,14 +31,19 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # All commands need -tags sqlite_fts5: brain depends on recall,
+      # whose store layer requires FTS5 to be compiled in. Without the
+      # tag, NewEngine fails at startup with the actionable
+      # "missing FTS5 support — rebuild with -tags sqlite_fts5" error
+      # surfaced in v0.1.x.
       - name: go build
-        run: go build ./...
+        run: go build -tags sqlite_fts5 ./...
 
       - name: go vet
-        run: go vet ./...
+        run: go vet -tags sqlite_fts5 ./...
 
       - name: go test with coverage
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -tags sqlite_fts5 -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
         # Only the Ubuntu run uploads to avoid double-counting. macOS is
