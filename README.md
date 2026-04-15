@@ -462,7 +462,9 @@ What recall brings to brain:
 - **Incremental embedding** — only modified chunks are re-embedded; `chunks.content_hash` gates the re-run
 - **Adaptive min-score floor** — 40% of the top result's score as a dynamic threshold, so noisy queries degrade gracefully instead of silently dropping the best available result
 
-The LLM streaming and prompt-caching logic talks directly to the [Anthropic REST API](https://docs.anthropic.com/en/api/) — no SDK dependency. The terminal UI is built on [charmbracelet/huh](https://github.com/charmbracelet/huh) (pickers), [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) (styling), and [chzyer/readline](https://github.com/chzyer/readline) (REPL).
+The LLM layer is pluggable. brain talks directly to the [Anthropic REST API](https://docs.anthropic.com/en/api/) (native streaming + prompt caching — no SDK dependency), to any [OpenAI-compatible endpoint](https://platform.openai.com/docs/api-reference) (OpenAI proper, Ollama, OpenRouter, LM Studio, LiteLLM, Groq, Together, Fireworks — wired through `OPENAI_API_KEY` + `OPENAI_BASE_URL`), and to the [Claude Code CLI](https://claude.ai/download) when neither API key is set (override the binary name with `BRAIN_CLAUDE_BIN` to point at a fork like `opencode`). Prompt caching only activates on the Anthropic native path; the other two backends stream responses without caching. See **Configuration → Using a different backend** for concrete examples.
+
+The terminal UI is built on [charmbracelet/huh](https://github.com/charmbracelet/huh) (pickers), [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) (styling), and [chzyer/readline](https://github.com/chzyer/readline) (REPL).
 
 ## License
 
